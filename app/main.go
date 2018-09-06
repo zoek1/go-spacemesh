@@ -187,6 +187,8 @@ func (app *SpacemeshApp) startSpacemesh(cmd *cobra.Command, args []string) {
 	log.Info("Initializing P2P services")
 	swarm, err := p2p.New(app.Config.P2P)
 
+	log.Info("bootstrap: %v viper bootstrap %v", app.Config.P2P.SwarmConfig.Bootstrap, viper.Get("swarm-bootstrap"))
+
 	if err != nil {
 		log.Error("Error starting p2p services, err: %v", err)
 	}
@@ -209,13 +211,15 @@ func (app *SpacemeshApp) startSpacemesh(cmd *cobra.Command, args []string) {
 	// start api servers
 	if apiConf.StartGrpcServer || apiConf.StartJSONServer {
 		// start grpc if specified or if json rpc specified
-		app.grpcAPIService = api.NewGrpcService()
+		app.grpcAPIService = api.NewGrpcService(app.P2P)
 		app.grpcAPIService.StartService(nil)
+		log.Info("Started GRPC")
 	}
 
 	if apiConf.StartJSONServer {
 		app.jsonAPIService = api.NewJSONHTTPServer()
 		app.jsonAPIService.StartService(nil)
+		log.Info("Started JSON service")
 	}
 
 	log.Info("App started.")

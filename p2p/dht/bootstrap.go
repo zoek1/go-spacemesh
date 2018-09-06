@@ -4,6 +4,8 @@ import (
 	"errors"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"time"
+	"github.com/spacemeshos/go-spacemesh/log"
+	"github.com/spf13/viper"
 )
 
 const (
@@ -28,14 +30,14 @@ var (
 // ID with a FindNode (using `dht.Lookup`). the process involves updating all returned nodes to the routing table
 // while all the nodes that receive our query will add us to their routing tables and send us as response to a `FindNode`.
 func (d *KadDHT) Bootstrap() error {
-
+	log.Info("Starting bootstrap")
 	c := d.config.RandomConnections
 	if c <= 0 {
 		return ErrZeroConnections
 	}
 	// register bootstrap nodes
 	bn := 0
-	for _, n := range d.config.BootstrapNodes {
+	for _, n := range viper.GetStringSlice("swarm-bootstrap-nodes"){//d.config.BootstrapNodes {
 		node, err := node.NewNodeFromString(n)
 		if err != nil {
 			// TODO : handle errors
@@ -43,6 +45,7 @@ func (d *KadDHT) Bootstrap() error {
 		}
 		d.rt.Update(node)
 		bn++
+		log.Info("added new bootstrap node %v", node)
 	}
 
 	if bn == 0 {

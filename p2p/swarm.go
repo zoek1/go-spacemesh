@@ -20,6 +20,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"strings"
 	"sync"
+	"github.com/spf13/viper"
 )
 
 type protocolMessage struct {
@@ -60,7 +61,7 @@ type swarm struct {
 func newSwarm(config config.Config, newNode bool) (*swarm, error) {
 
 	port := config.TCPPort
-	address := fmt.Sprintf("127.0.0.1:%d", port)
+	address := fmt.Sprintf("0.0.0.0:%d", port)
 
 	var l *node.LocalNode
 	var err error
@@ -97,7 +98,7 @@ func newSwarm(config config.Config, newNode bool) (*swarm, error) {
 
 	go s.listenToNetworkMessages()
 
-	if config.SwarmConfig.Bootstrap {
+	if viper.GetBool("swarm-bootstrap"){//config.SwarmConfig.Bootstrap {
 		err := s.dht.Bootstrap()
 		if err != nil {
 			s.Shutdown()

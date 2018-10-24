@@ -2,12 +2,10 @@ package p2p
 
 import (
 	inet "net"
-
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
 	"github.com/spacemeshos/go-spacemesh/p2p/dht"
 	"github.com/spacemeshos/go-spacemesh/p2p/net"
 	"github.com/spacemeshos/go-spacemesh/timesync"
-
 	"bytes"
 	"errors"
 	"fmt"
@@ -21,6 +19,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"strconv"
 	"sync"
+	"github.com/spf13/viper"
 	"sync/atomic"
 	"time"
 )
@@ -90,6 +89,7 @@ func newSwarm(config config.Config, newNode bool, persist bool) (*swarm, error) 
 	port := config.TCPPort
 	address := inet.JoinHostPort("0.0.0.0", strconv.Itoa(port))
 
+
 	var l *node.LocalNode
 	var err error
 	// Load an existing identity from file if exists.
@@ -126,6 +126,15 @@ func newSwarm(config config.Config, newNode bool, persist bool) (*swarm, error) 
 	s.gossip = gossip.NewNeighborhood(config.SwarmConfig, s.dht, s.cPool, s.lNode.Log)
 
 	s.lNode.Debug("Created swarm for local node %s, %s", l.Address(), l.Pretty())
+	if viper.GetBool("swarm-bootstrap"){//config.SwarmConfig.Bootstrap {
+		err := s.dht.Bootstrap()
+		if err != nil {
+			s.Shutdown()
+			return nil, err
+		}
+	}
+
+	go s.checkTimeDrifts()
 
 	return s, nil
 }

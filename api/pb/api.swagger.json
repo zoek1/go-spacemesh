@@ -40,9 +40,88 @@
           "SpaceMeshService"
         ]
       }
+    },
+    "/v1/register": {
+      "post": {
+        "operationId": "RegisterProtocol",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/pbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbProtocol"
+            }
+          }
+        ],
+        "tags": [
+          "SpaceMeshService"
+        ]
+      }
+    },
+    "/v1/send": {
+      "post": {
+        "operationId": "SendMessage",
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "$ref": "#/definitions/pbSimpleMessage"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/pbInMessage"
+            }
+          }
+        ],
+        "tags": [
+          "SpaceMeshService"
+        ]
+      }
     }
   },
   "definitions": {
+    "pbInMessage": {
+      "type": "object",
+      "properties": {
+        "nodeID": {
+          "type": "string"
+        },
+        "protocolName": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
+    "pbProtocol": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
+    },
     "pbSimpleMessage": {
       "type": "object",
       "properties": {

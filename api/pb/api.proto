@@ -44,5 +44,12 @@ service SpaceMeshService {
           body: "*"
         };
     }
+
+    rpc Broadcast(InMessage) returns (SimpleMessage){
+        option (google.api.http) = {
+          post: "/v1/broadcast"
+          body: "*"
+        };
+    }
 }
 

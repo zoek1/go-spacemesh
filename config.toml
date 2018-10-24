@@ -23,7 +23,7 @@ response-timeout = "2s"
 bootstrap = false
 bucketsize = 20 # Routing table bucket size
 rtalpha = 3 # Routing table alpha
-randcon = 2 # Number of random connections
+randcon = 1 # Number of random connections
 bootnodes = ["0.0.0.0:7517/j7qWfWaJRVp25ZsnCu9rJ4PmhigZBtesB4YmQHqqPvtR"]
 
 # API Config

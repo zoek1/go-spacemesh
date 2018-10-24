@@ -85,7 +85,7 @@ BOOTLOOP:
 			req := make(chan int)
 			d.rt.Size(req)
 			size := <-req
-			if (size - bn) >= c { // Don't count bootstrap nodes
+			if size >= c { // Don't count bootstrap nodes
 				break BOOTLOOP
 			}
 			d.local.Warning("%d lookup didn't bootstrap the routing table", i)

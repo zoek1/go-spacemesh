@@ -29,8 +29,6 @@ func (s SpaceMeshGrpcService) Echo(ctx context.Context, in *pb.SimpleMessage) (*
 
 // Echo returns the response for an echo api request
 func (s SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Protocol) (*pb.SimpleMessage, error) {
-	//s.app.P2P.SendMessage()
-
 	cn := s.app.RegisterProtocol(in.Name)
 	destinationAddress, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+  strconv.Itoa(int(in.Port)) )
 	if err != nil {
@@ -55,7 +53,11 @@ func (s SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Proto
 				if !ok  {
 					break Loop
 				}
-				connection.WriteToUDP(ime.Data(), destinationAddress)
+				log.Info("Sending message %v to %v",destinationAddress, ime.Data() )
+				_, err := connection.Write(ime.Data())
+				if err != nil {
+					log.Error("Received error : %v", err)
+				}
 			}
 		}
 	}()
@@ -74,7 +76,7 @@ func (s SpaceMeshGrpcService) SendMessage(ctx context.Context, in *pb.InMessage)
 
 // Echo returns the response for an echo api request
 func (s SpaceMeshGrpcService) Broadcast(ctx context.Context, in *pb.InMessage) (*pb.SimpleMessage, error) {
-	err := s.app.Broadcast(in.NodeID, in.Payload)
+	err := s.app.Broadcast(in.ProtocolName, in.Payload)
 	if err != nil {
 		return nil, err
 	}

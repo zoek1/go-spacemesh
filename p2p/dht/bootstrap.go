@@ -2,10 +2,11 @@ package dht
 
 import (
 	"errors"
+	"github.com/btcsuite/btcutil/base58"
+	"github.com/spacemeshos/go-spacemesh/crypto"
+	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"time"
-	"github.com/spacemeshos/go-spacemesh/log"
-	"github.com/spf13/viper"
 )
 
 const (
@@ -40,7 +41,7 @@ func (d *KadDHT) Bootstrap() error {
 	}
 	// register bootstrap nodes
 	bn := 0
-	for _, n := range viper.GetStringSlice("swarm-bootstrap-nodes"){//d.config.BootstrapNodes {
+	for _, n := range d.config.BootstrapNodes {
 		node, err := node.NewNodeFromString(n)
 		if err != nil {
 			// TODO : handle errors
@@ -59,13 +60,12 @@ func (d *KadDHT) Bootstrap() error {
 
 	timeout := time.NewTimer(BootstrapTimeout)
 	i := 0
+	searchFor := d.local.PublicKey().String() //me
 	// TODO: Issue a healthcheck / refresh loop every x interval.
 BOOTLOOP:
 	for {
-		//reschan := make(chan error)
-
 		go func() {
-			_, err := d.Lookup(d.local.PublicKey().String())
+			_, err := d.Lookup(searchFor)
 			d.reschan <- err
 		}()
 
@@ -89,14 +89,47 @@ BOOTLOOP:
 				break BOOTLOOP
 			}
 			d.local.Warning("%d lookup didn't bootstrap the routing table", i)
-			d.local.Warning("RT now has %d peers", size-bn)
+			d.local.Warning("RT now has %d peers", size)
+
+			if size > bn {
+				d.local.Warning("Looking up ourselves didn't fill routing table, trying random address")
+				randompeer, err := crypto.GetRandomBytes(32)
+				if err == nil {
+					searchFor = base58.Encode(randompeer)
+				}
+			}
 			time.Sleep(LookupIntervals)
 		}
 	}
+	// if we finished looking up ourselves extend the search with another random ID
+	go func() {
+		randompeer, _ := crypto.GetRandomBytes(32)
+		_, err := d.Lookup(base58.Encode(randompeer))
+		d.reschan <- err
+	}()
+
+	timeout.Reset(BootstrapTimeout / 2)
+
+	select {
+	case <-timeout.C:
+		return ErrFailedToBoot
+	case err, chState := <-d.reschan:
+
+		if err == nil {
+			return ErrFoundOurself
+		}
+		if chState == false { //channel closed
+			return ErrFailedToBoot
+		}
+
+		break
+
+	}
+
 	return nil // succeed
 }
 
-func (d *KadDHT) Close(){
+func (d *KadDHT) Close() {
 	close(d.reschan)
 }
 

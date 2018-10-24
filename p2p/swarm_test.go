@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
+	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
 	"github.com/spacemeshos/go-spacemesh/p2p/message"
 	"github.com/spacemeshos/go-spacemesh/p2p/net"
@@ -18,7 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"sync"
-	"github.com/spacemeshos/go-spacemesh/crypto"
+	"sync/atomic"
 )
 
 func p2pTestInstance(t testing.TB, config config.Config) *swarm {
@@ -28,7 +29,6 @@ func p2pTestInstance(t testing.TB, config config.Config) *swarm {
 	p, err := newSwarm(config, true, true)
 	assert.NoError(t, err, "Error creating p2p stack, err: %v", err)
 	assert.NotNil(t, p)
-	p.Start()
 	return p
 }
 
@@ -50,6 +50,18 @@ func Test_newSwarm(t *testing.T) {
 	err = s.Start()
 	assert.NoError(t, err, err)
 	assert.NotNil(t, s)
+	s.Shutdown()
+}
+
+func TestSwarm_Start(t *testing.T) {
+	s, err := newSwarm(config.DefaultConfig(), true, false)
+	assert.NoError(t, err)
+	assert.NotNil(t, s)
+	err = s.Start()
+	assert.NoError(t, err)
+	assert.Equal(t, atomic.LoadUint32(&s.started), uint32(1))
+	err = s.Start()
+	assert.Error(t, err)
 	s.Shutdown()
 }
 
@@ -82,7 +94,7 @@ func TestSwarm_RegisterProtocolNoStart(t *testing.T) {
 	s.Shutdown()
 }
 
-func  TestSwarm_processMessage(t *testing.T) {
+func TestSwarm_processMessage(t *testing.T) {
 	s := swarm{}
 	s.lNode, _ = node.GenerateTestNode(t)
 	r := node.GenerateRandomNodeData()
@@ -368,6 +380,8 @@ func TestBootstrap(t *testing.T) {
 				bn := p2pTestInstance(t, config.DefaultConfig())
 				bn.lNode.Info("This is a bootnode - %v", bn.lNode.Node.String())
 				bnarr = append(bnarr, node.StringFromNode(bn.lNode.Node))
+				err := bn.Start()
+				assert.NoError(t, err)
 			}
 
 			cfg := config.DefaultConfig()
@@ -381,6 +395,9 @@ func TestBootstrap(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					sw := p2pTestInstance(t, cfg)
+					err := sw.Start()
+					assert.NoError(t, err)
+					sw.waitForBoot()
 					bufchan <- sw
 					wg.Done()
 				}()
@@ -394,19 +411,23 @@ func TestBootstrap(t *testing.T) {
 
 			}
 
-			randnode := swarms[rand.Int31n(int32(len(swarms)))-1]
-			randnode2 := swarms[rand.Int31n(int32(len(swarms)))-1]
+			rand.Seed(time.Now().UnixNano())
+			for z := 0; z < 10; z++ {
 
-			for (randnode == nil || randnode2 == nil) || randnode.lNode.String() == randnode2.lNode.String() {
-				randnode = swarms[rand.Int31n(int32(len(swarms)))-1]
-				randnode2 = swarms[rand.Int31n(int32(len(swarms)))-1]
+				randnode := swarms[rand.Int31n(int32(len(swarms)-1))]
+				randnode2 := swarms[rand.Int31n(int32(len(swarms)-1))]
+
+				//for (randnode == nil || randnode2 == nil) || randnode.lNode.String() == randnode2.lNode.String() {
+				//	randnode = swarms[rand.Int31n(int32(len(swarms)))-1]
+				//	randnode2 = swarms[rand.Int31n(int32(len(swarms)))-1]
+				//}
+
+				randnode.RegisterProtocol(exampleProtocol)
+				recv := randnode2.RegisterProtocol(exampleProtocol)
+
+				sendDirectMessage(t, randnode, randnode2.lNode.PublicKey().String(), recv, true)
 			}
-
-			randnode.RegisterProtocol(exampleProtocol)
-			recv := randnode2.RegisterProtocol(exampleProtocol)
-
-			sendDirectMessage(t, randnode, randnode2.lNode.PublicKey().String(), recv, true)
-			time.Sleep(3 * time.Second)
+			time.Sleep(1 * time.Second)
 		})
 	}
 }

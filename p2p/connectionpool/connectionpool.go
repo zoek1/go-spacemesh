@@ -200,6 +200,23 @@ func (cp *ConnectionPool) GetConnection(address string, remotePub crypto.PublicK
 	return res.conn, res.err
 }
 
+func (cp *ConnectionPool) TryExistingConnection(remotePub crypto.PublicKey) (net.Connection, error) {
+	cp.connMutex.RLock()
+	if cp.shutdown {
+		cp.connMutex.RUnlock()
+		return nil, errors.New("ConnectionPool was shut down")
+	}
+	// look for the connection in the pool
+	conn, found := cp.connections[remotePub.String()]
+	if found {
+		cp.connMutex.RUnlock()
+		return conn, nil
+	}
+	cp.connMutex.RUnlock()
+
+	return nil, errors.New("Connection doesn't exist")
+}
+
 func (cp *ConnectionPool) beginEventProcessing() {
 Loop:
 	for {

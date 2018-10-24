@@ -15,7 +15,9 @@ import (
 	"github.com/spacemeshos/go-spacemesh/p2p"
 	"github.com/spacemeshos/go-spacemesh/timesync"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"reflect"
 )
 
 // SpacemeshApp is the cli app singleton
@@ -51,17 +53,28 @@ var (
 )
 
 // ParseConfig unmarshal config file into struct
-func ParseConfig() (*cfg.Config, error) {
-	conf := cfg.DefaultConfig()
+func (app *SpacemeshApp) ParseConfig() (err error) {
 
-	err := viper.Unmarshal(&conf)
-
-	if err != nil {
-		log.Error("Failed to parse config\n")
-		return nil, err
+	fileLocation := viper.GetString("config")
+	vip := viper.New()
+	// read in default config if passed as param using viper
+	if err = cfg.LoadConfig(fileLocation, vip); err != nil {
+		log.Error(fmt.Sprintf("couldn't load config file at location: %s swithing to defaults \n error: %v.",
+			fileLocation, err))
+		//return err
 	}
 
-	return &conf, nil
+	conf := cfg.DefaultConfig()
+	// load config if it was loaded to our viper
+	err = vip.Unmarshal(&conf)
+	if err != nil {
+		log.Error("Failed to parse config\n")
+		return err
+	}
+
+	app.Config = &conf
+
+	return nil
 }
 
 // NewSpacemeshApp creates an instance of the spacemesh app
@@ -98,21 +111,73 @@ func (app *SpacemeshApp) before(cmd *cobra.Command, args []string) (err error) {
 		}
 	}()
 
-	fileLocation := viper.GetString("config")
-
-	// read in default config if passed as param using viper
-	if err := cfg.LoadConfig(fileLocation); err != nil {
-		log.Error(fmt.Sprintf("couldn't load config file at location: %s \n error: %v",
-			fileLocation, err))
-		return err
-	}
-
 	// parse the config file based on flags et al
-	app.Config, err = ParseConfig()
+	err = app.ParseConfig()
 
 	if err != nil {
-		log.Error(fmt.Sprintf("couldn't parse the config toml file %v", err))
+		log.Error(fmt.Sprintf("couldn't parse the config %v", err))
 	}
+
+	// this is ugly but we have to do this because viper can't handle nested structs when deserialize
+
+	cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			name := f.Name
+			ff := reflect.TypeOf(*app.Config)
+
+			for i := 0; i < ff.NumField(); i++ {
+				if ff.Field(i).Tag.Get("mapstructure") == name {
+					reflect.ValueOf(&app.Config).Elem().Field(i).Set(reflect.ValueOf(viper.Get(name)))
+					return
+				}
+			}
+
+			ff = reflect.TypeOf(app.Config.P2P)
+
+			for i := 0; i < ff.NumField(); i++ {
+				if ff.Field(i).Tag.Get("mapstructure") == name {
+					reflect.ValueOf(&app.Config.P2P).Elem().Field(i).Set(reflect.ValueOf(viper.Get(name)))
+					return
+				}
+			}
+			ff = reflect.TypeOf(app.Config.P2P.SwarmConfig)
+
+			for i := 0; i < ff.NumField(); i++ {
+				if ff.Field(i).Tag.Get("mapstructure") == name {
+					reflect.ValueOf(&app.Config.P2P.SwarmConfig).Elem().Field(i).Set(reflect.ValueOf(viper.Get(name)))
+					return
+				}
+			}
+
+			ff = reflect.TypeOf(app.Config.P2P.TimeConfig)
+
+			for i := 0; i < ff.NumField(); i++ {
+				if ff.Field(i).Tag.Get("mapstructure") == name {
+					reflect.ValueOf(&app.Config.P2P.TimeConfig).Elem().Field(i).Set(reflect.ValueOf(viper.Get(name)))
+					return
+				}
+			}
+
+			ff = reflect.TypeOf(app.Config.API)
+
+			for i := 0; i < ff.NumField(); i++ {
+				if ff.Field(i).Tag.Get("mapstructure") == name {
+					reflect.ValueOf(&app.Config.API).Elem().Field(i).Set(reflect.ValueOf(viper.Get(name)))
+					return
+				}
+			}
+
+			ff = reflect.TypeOf(app.Config.CONSENSUS)
+
+			for i := 0; i < ff.NumField(); i++ {
+				if ff.Field(i).Tag.Get("mapstructure") == name {
+					reflect.ValueOf(&app.Config.CONSENSUS).Elem().Field(i).Set(reflect.ValueOf(viper.Get(name)))
+					return
+				}
+			}
+
+		}
+	})
 
 	//app.setupLogging(ctx.Bool("debug"))
 
@@ -198,7 +263,6 @@ func (app *SpacemeshApp) startSpacemesh(cmd *cobra.Command, args []string) {
 		log.Error("Error starting p2p services, err: %v", err)
 		panic("Error starting p2p services")
 	}
-
 
 	app.P2P = swarm
 	app.NodeInitCallback <- true

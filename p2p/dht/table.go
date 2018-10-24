@@ -273,7 +273,7 @@ func (rt *routingTableImpl) randomPeers(qty int) []node.Node {
 	}
 
 	bufSize := qty
-	if (size < qty) {
+	if size < qty {
 		bufSize = size
 	}
 	buf := make([]node.Node, bufSize)
@@ -332,8 +332,8 @@ func (rt *routingTableImpl) update(p node.Node) {
 		// TODO: if bucket is full ping oldest node and replace if it fails to answer
 		// TODO: check latency metrics and replace if new node is better then oldest one.
 		// Fresh, recent contacted (alive), low latency nodes should be kept at top of the bucket.
-		bucket.PopBack() // todo :ping them.
-		bucket.PushFront(p)
+		//bucket.PopBack() // todo :ping them.
+		//bucket.PushFront(p)
 		return
 	}
 

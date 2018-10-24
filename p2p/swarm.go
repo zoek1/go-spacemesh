@@ -1,25 +1,24 @@
 package p2p
 
 import (
-	inet "net"
-	"github.com/spacemeshos/go-spacemesh/p2p/config"
-	"github.com/spacemeshos/go-spacemesh/p2p/dht"
-	"github.com/spacemeshos/go-spacemesh/p2p/net"
-	"github.com/spacemeshos/go-spacemesh/timesync"
 	"bytes"
 	"errors"
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/gogo/protobuf/proto"
+	"github.com/spacemeshos/go-spacemesh/p2p/config"
 	"github.com/spacemeshos/go-spacemesh/p2p/connectionpool"
+	"github.com/spacemeshos/go-spacemesh/p2p/dht"
 	"github.com/spacemeshos/go-spacemesh/p2p/gossip"
 	"github.com/spacemeshos/go-spacemesh/p2p/message"
+	"github.com/spacemeshos/go-spacemesh/p2p/net"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/pb"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
+	"github.com/spacemeshos/go-spacemesh/timesync"
+	inet "net"
 	"strconv"
 	"sync"
-	"github.com/spf13/viper"
 	"sync/atomic"
 	"time"
 )
@@ -38,11 +37,11 @@ func (pm protocolMessage) Data() []byte {
 }
 
 type swarm struct {
-	started uint32
-	bootErr error
-	bootChan chan struct{}
+	started   uint32
+	bootErr   error
+	bootChan  chan struct{}
 	gossipErr error
-	gossipC chan struct{}
+	gossipC   chan struct{}
 
 	config config.Config
 
@@ -89,7 +88,6 @@ func newSwarm(config config.Config, newNode bool, persist bool) (*swarm, error) 
 	port := config.TCPPort
 	address := inet.JoinHostPort("0.0.0.0", strconv.Itoa(port))
 
-
 	var l *node.LocalNode
 	var err error
 	// Load an existing identity from file if exists.
@@ -112,8 +110,8 @@ func newSwarm(config config.Config, newNode bool, persist bool) (*swarm, error) 
 	s := &swarm{
 		config:           config,
 		lNode:            l,
-		bootChan:	make(chan struct{}),
-		gossipC:	make(chan struct{}),
+		bootChan:         make(chan struct{}),
+		gossipC:          make(chan struct{}),
 		protocolHandlers: make(map[string]chan service.Message),
 		network:          n,
 		cPool:            connectionpool.NewConnectionPool(n, l.PublicKey()),
@@ -141,26 +139,28 @@ func (s *swarm) Start() error {
 
 	go s.checkTimeDrifts()
 
-	if viper.GetBool("swarm-bootstrap") {
+	if s.config.SwarmConfig.Bootstrap {
 		go func() {
 			b := time.Now()
 			err := s.dht.Bootstrap()
 			if err != nil {
 				s.bootErr = err
+				s.lNode.Error("Failed to bootstrap, err:", err)
 				s.Shutdown()
 			}
 			close(s.bootChan)
-			s.lNode.Info("DHT Bootstrapped with %d peers in %v", s.dht.Size(), time.Since(b))
+			s.lNode.Info("DHT State with %d peers in %v", s.dht.Size(), time.Since(b))
 		}()
 	}
 
 	go func() {
-		if viper.GetBool("swarm-bootstrap") {
+		if s.config.SwarmConfig.Bootstrap {
 			s.waitForBoot()
 		}
 		err := s.gossip.Start()
 		if err != nil {
 			s.gossipErr = err
+			s.lNode.Error("Failed to start gossip, err:", err)
 			s.Shutdown()
 		}
 		close(s.gossipC)

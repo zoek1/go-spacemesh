@@ -1,11 +1,11 @@
 package simulator
 
 import (
+	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"io"
 	"sync"
-	"github.com/spacemeshos/go-spacemesh/log"
 )
 
 // TODO : implmement delays?
@@ -107,7 +107,20 @@ func (sn *Node) SendMessage(nodeID string, protocol string, payload []byte) erro
 		thec <- simMessage{payload, sn.Node}
 		sn.sim.updateNode(nodeID, sn)
 	}
-	log.Info("%v >> %v (%v)", sn.Node.PublicKey(), nodeID, payload)
+	//log.Info("%v >> %v (%v)", sn.Node.PublicKey(), nodeID, payload)
+	return nil
+}
+
+// Broadcast
+func (sn *Node) Broadcast(protocol string, payload []byte) error {
+	sn.sim.mutex.RLock()
+	for n := range sn.sim.protocolHandler {
+		if c, ok := sn.sim.protocolHandler[n][protocol]; ok {
+			c <- simMessage{payload, sn.Node}
+		}
+	}
+	sn.sim.mutex.RUnlock()
+	log.Info("%v >> All ( Gossip ) (%v)", sn.Node.PublicKey(), payload)
 	return nil
 }
 

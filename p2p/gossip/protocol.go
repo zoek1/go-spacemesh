@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
@@ -12,7 +13,6 @@ import (
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"sync"
 	"time"
-	"github.com/davecgh/go-spew/spew"
 )
 
 const PeerMessageQueueSize = 100
@@ -39,6 +39,7 @@ type Neighborhood struct {
 
 	peers        map[string]*peer
 	morePeersReq chan struct{}
+	remove       chan string
 
 	oldMessageMu sync.RWMutex
 	oldMessageQ  map[string]struct{}
@@ -80,7 +81,7 @@ func makePeer(node2 node.Node, c net.Connection, log log.Log) *peer {
 	return &peer{
 		log,
 		node2,
-		make(chan error,1),
+		make(chan error, 1),
 		time.Now(),
 		c,
 		make(map[string]struct{}),
@@ -126,7 +127,7 @@ func (p *peer) addMessage(msg []byte) error {
 	return nil
 }
 
-func (p *peer) start(dischann chan struct{}) {
+func (p *peer) start(dischann chan string) {
 	// check on new peers if they need something we have
 	//c := make(chan []string)
 	//t := time.NewTicker(time.Second * 5)
@@ -141,9 +142,8 @@ func (p *peer) start(dischann chan struct{}) {
 			}
 		case d := <-p.disc:
 			log.Error("peer disconnected %v", d)
-			//p.conn.Close()
 			if dischann != nil {
-				dischann <- struct{}{}
+				dischann <- p.Node.String()
 			}
 			return
 		}
@@ -171,7 +171,7 @@ func (s *Neighborhood) Peer(pubkey string) (node.Node, net.Connection) {
 func (s *Neighborhood) Broadcast(msg []byte) error {
 
 	if len(s.peers) == 0 {
-		panic("WHOHO")
+		return errors.New("you have no peers to broadcast to")
 	}
 
 	s.oldMessageMu.RLock()
@@ -228,7 +228,6 @@ func (s *Neighborhood) getMorePeers(numpeers int) {
 	// TODO: try splitting the load and don't connect to more than X at a time
 	for i := 0; i < ndsLen; i++ {
 		go func(nd node.Node, reportChan chan cnErr) {
-			spew.Dump(nd)
 			c, err := s.cp.GetConnection(nd.Address(), nd.PublicKey())
 			reportChan <- cnErr{nd, c, err}
 		}(nds[i], res)
@@ -256,7 +255,7 @@ func (s *Neighborhood) getMorePeers(numpeers int) {
 		s.peers[cne.n.String()] = peer
 		s.peersMutex.Unlock()
 		s.Debug("Neighborhood: Added peer to peer list %v", cne.n.Pretty())
-		go peer.start(s.morePeersReq)
+		go peer.start(s.remove)
 
 		if i == numpeers {
 			close(res)
@@ -286,6 +285,16 @@ func (s *Neighborhood) Start() error {
 	loop:
 		for {
 			select {
+			case torm := <-s.remove:
+				s.peersMutex.RLock()
+				_, ok := s.peers[torm]
+				s.peersMutex.RUnlock()
+				if ok {
+					s.peersMutex.Lock()
+					delete(s.peers, torm)
+					s.peersMutex.Unlock()
+				}
+				s.morePeersReq <- struct{}{}
 			case <-s.morePeersReq:
 				pl := len(s.peers)
 				num := s.config.RandomConnections - pl

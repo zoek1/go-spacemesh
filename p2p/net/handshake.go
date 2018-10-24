@@ -140,11 +140,11 @@ func ProcessHandshakeRequest(networkID int8, lPub crypto.PublicKey, lPri crypto.
 	// verify mac
 	hm := hmac.New(sha256.New, keyM)
 	hm.Write(req.Iv)
-	/*expectedMAC := hm.Sum(nil)
+	expectedMAC := hm.Sum(nil)
 	if !hmac.Equal(req.Hmac, expectedMAC) {
 		return nil, nil, errors.New("invalid hmac")
 	}
-*/
+
 	// verify signature
 	sig := req.Sign
 	req.Sign = ""

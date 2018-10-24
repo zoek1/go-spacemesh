@@ -3,6 +3,7 @@ package p2p
 import (
 	"bytes"
 	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
@@ -12,21 +13,24 @@ import (
 	"time"
 )
 
-func TestSwarm_GossipRoundTrip(t *testing.T) {
+func TestSwarm_EveryNodeIsInSelected(t *testing.T) {
 	type sp struct {
 		s      *swarm
 		protoC chan service.Message
 	}
 
-	numPeers, connections := 100, 5
+	numPeers, connections := 10, 3
 
 	nodes := make([]*swarm, numPeers)
 	chans := make([]chan service.Message, numPeers)
 	nchan := make(chan *sp, numPeers)
+	selected := make([][]node.Node, numPeers)
 
 	cfg := config.DefaultConfig()
 	cfg.SwarmConfig.RandomConnections = connections
+	cfg.SwarmConfig.Gossip = false
 	cfg.SwarmConfig.Bootstrap = false
+	cfg.SwarmConfig.RoutingTableBucketSize = 100
 	bn := p2pTestInstance(t, cfg)
 	// TODO: write protocol matching. so we won't crash connections because bad protocol messages.
 	// if we're after protocol matching then we can crash the connection since its probably malicious
@@ -38,6 +42,7 @@ func TestSwarm_GossipRoundTrip(t *testing.T) {
 	cfg2 := config.DefaultConfig()
 	cfg2.SwarmConfig.RandomConnections = connections
 	cfg2.SwarmConfig.Bootstrap = true
+	cfg2.SwarmConfig.Gossip = false
 	cfg2.SwarmConfig.BootstrapNodes = []string{node.StringFromNode(bn.lNode.Node)}
 	for i := 0; i < numPeers; i++ {
 		go func() {
@@ -47,7 +52,90 @@ func TestSwarm_GossipRoundTrip(t *testing.T) {
 			}
 			nodchan := nod.RegisterProtocol("gossip") // this is example
 			err := nod.Start()
-			assert.NoError(t, err, err)
+			assert.NoError(t, err)
+			assert.NoError(t, nod.waitForBoot())
+			nchan <- &sp{nod, nodchan}
+		}()
+	}
+
+	i := 0
+	for n := range nchan {
+		nodes[i] = n.s
+		chans[i] = n.protoC
+		selected[i] = n.s.dht.SelectPeers(5)
+		i++
+		if i >= numPeers {
+			close(nchan)
+		}
+	}
+
+	var passed []string
+	bn.lNode.Info("ALL Peers bootstrapped")
+NL:
+	for n := range nodes { // iterate nodes
+		id := nodes[n].lNode.String()
+		for j := range selected { // iterate all selected set
+			if n == j {
+				continue
+			}
+
+			for s := range selected[j] {
+				if selected[j][s].String() == id {
+					passed = append(passed, id)
+					continue NL
+				}
+			}
+		}
+	}
+
+	fmt.Println(len(passed))
+	spew.Dump(passed)
+
+	assert.Equal(t, len(passed), numPeers)
+
+	time.Sleep(1 * time.Second)
+
+}
+
+func TestSwarm_GossipRoundTrip(t *testing.T) {
+	type sp struct {
+		s      *swarm
+		protoC chan service.Message
+	}
+
+	numPeers, connections := 10, 3
+
+	nodes := make([]*swarm, numPeers)
+	chans := make([]chan service.Message, numPeers)
+	nchan := make(chan *sp, numPeers)
+
+	cfg := config.DefaultConfig()
+	cfg.SwarmConfig.RandomConnections = connections
+	cfg.SwarmConfig.Bootstrap = false
+	cfg.SwarmConfig.Gossip = true
+	cfg.SwarmConfig.RoutingTableBucketSize = 100 // we don't want to lose peers
+	bn := p2pTestInstance(t, cfg)
+	// TODO: write protocol matching. so we won't crash connections because bad protocol messages.
+	// if we're after protocol matching then we can crash the connection since its probably malicious
+	bn.RegisterProtocol("gossip") // or else it will crash connections
+
+	err := bn.Start()
+	assert.NoError(t, err, "Bootnode didnt work")
+	bn.lNode.Info("Bootnode : ", bn.lNode.String())
+	cfg2 := config.DefaultConfig()
+	cfg2.SwarmConfig.RandomConnections = connections
+	cfg2.SwarmConfig.Gossip = true
+	cfg2.SwarmConfig.Bootstrap = true
+	cfg2.SwarmConfig.BootstrapNodes = []string{node.StringFromNode(bn.lNode.Node)}
+	for i := 0; i < numPeers; i++ {
+		go func() {
+			nod := p2pTestInstance(t, cfg2)
+			if nod == nil {
+				t.Error("ITS NIL WTF")
+			}
+			nodchan := nod.RegisterProtocol("gossip") // this is example
+			err := nod.Start()
+			assert.NoError(t, err)
 			assert.NoError(t, nod.waitForBoot())
 			assert.NoError(t, nod.waitForGossip())
 			nchan <- &sp{nod, nodchan}
@@ -63,7 +151,6 @@ func TestSwarm_GossipRoundTrip(t *testing.T) {
 			close(nchan)
 		}
 	}
-
 
 	fmt.Println(" ################################################ ALL PEERS BOOTSTRAPPED ################################################")
 
@@ -107,7 +194,6 @@ func TestSwarm_GossipRoundTrip(t *testing.T) {
 	bn.lNode.Info("didnt get : %v", didnt)
 	time.Sleep(time.Millisecond * 1000) // to see the log
 }
-
 
 func TestSwarm_GossipRoundTrip2(t *testing.T) {
 	type sp struct {
@@ -159,7 +245,7 @@ func TestSwarm_GossipRoundTrip2(t *testing.T) {
 		if i >= numPeers {
 			close(nchan)
 		}
-		fmt.Println("FINSIHED : " ,i)
+		fmt.Println("FINSIHED : ", i)
 	}
 	i = 0
 	for n := range nodes {
@@ -182,6 +268,6 @@ func TestSwarm_GossipRoundTrip2(t *testing.T) {
 		}
 	}
 
-	assert.Equal(t, i , numPeers)
+	assert.Equal(t, i, numPeers)
 
 }

@@ -215,7 +215,7 @@ func (app *SpacemeshApp) startSpacemesh(cmd *cobra.Command, args []string) {
 
 	// todo: start node consensus protocol here only after we have an unlocked account
 
-	// start api servers
+	log.Info("start api servers")
 	if apiConf.StartGrpcServer || apiConf.StartJSONServer {
 		// start grpc if specified or if json rpc specified
 		app.grpcAPIService = api.NewGrpcService(app.P2P)

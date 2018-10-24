@@ -73,8 +73,12 @@ func (s SpaceMeshGrpcService) SendMessage(ctx context.Context, in *pb.InMessage)
 }
 
 // Echo returns the response for an echo api request
-func (s SpaceMeshGrpcService) Broadcast(ctx context.Context, in *pb.SimpleMessage) (*pb.SimpleMessage, error) {
-	return &pb.SimpleMessage{Value: in.Value}, nil
+func (s SpaceMeshGrpcService) Broadcast(ctx context.Context, in *pb.InMessage) (*pb.SimpleMessage, error) {
+	err := s.app.Broadcast(in.NodeID, in.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.SimpleMessage{Value: "ok"}, nil
 }
 
 // StopService stops the grpc service.

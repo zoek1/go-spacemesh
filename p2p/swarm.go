@@ -125,17 +125,6 @@ func newSwarm(config config.Config, newNode bool, persist bool) (*swarm, error) 
 
 	s.gossip = gossip.NewNeighborhood(config.SwarmConfig, s.dht, s.cPool, s.lNode.Log)
 
-	s.lNode.Debug("Created swarm for local node %s, %s", l.Address(), l.Pretty())
-	if viper.GetBool("swarm-bootstrap"){//config.SwarmConfig.Bootstrap {
-		err := s.dht.Bootstrap()
-		if err != nil {
-			s.Shutdown()
-			return nil, err
-		}
-	}
-
-	go s.checkTimeDrifts()
-
 	return s, nil
 }
 
@@ -152,7 +141,7 @@ func (s *swarm) Start() error {
 
 	go s.checkTimeDrifts()
 
-	if s.config.SwarmConfig.Bootstrap {
+	if viper.GetBool("swarm-bootstrap") {
 		go func() {
 			b := time.Now()
 			err := s.dht.Bootstrap()
@@ -166,7 +155,7 @@ func (s *swarm) Start() error {
 	}
 
 	go func() {
-		if s.config.SwarmConfig.Bootstrap {
+		if viper.GetBool("swarm-bootstrap") {
 			s.waitForBoot()
 		}
 		err := s.gossip.Start()
@@ -270,6 +259,7 @@ func (s *swarm) RegisterProtocol(protocol string) chan service.Message {
 // Shutdown sends a shutdown signal to all running services of swarm and then runs an internal shutdown to cleanup.
 func (s *swarm) Shutdown() {
 	close(s.shutdown)
+	s.dht.Close()
 	<-s.shutdown // Block until really closes.
 	s.shutdownInternal()
 }

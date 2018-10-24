@@ -18,6 +18,8 @@ type DHT interface {
 	SelectPeers(qty int) []node.Node
 	Bootstrap() error
 
+	Close()
+
 	Size() int
 }
 
@@ -42,6 +44,8 @@ type KadDHT struct {
 	fnp *findNodeProtocol
 
 	service service.Service
+
+	reschan chan error
 }
 
 func (d *KadDHT) Size() int {
@@ -61,6 +65,7 @@ func New(node *node.LocalNode, config config.SwarmConfig, service service.Servic
 		local:   node,
 		rt:      NewRoutingTable(config.RoutingTableBucketSize, node.DhtID(), node.Logger),
 		service: service,
+		reschan: make(chan error),
 	}
 	d.fnp = newFindNodeProtocol(service, d.rt)
 	return d

@@ -62,20 +62,23 @@ func (d *KadDHT) Bootstrap() error {
 	// TODO: Issue a healthcheck / refresh loop every x interval.
 BOOTLOOP:
 	for {
-		reschan := make(chan error)
+		//reschan := make(chan error)
 
 		go func() {
 			_, err := d.Lookup(d.local.PublicKey().String())
-			reschan <- err
+			d.reschan <- err
 		}()
 
 		select {
 		case <-timeout.C:
 			return ErrFailedToBoot
-		case err := <-reschan:
+		case err, chState := <-d.reschan:
 			i++
 			if err == nil {
 				return ErrFoundOurself
+			}
+			if chState == false { //channel closed
+				return ErrFailedToBoot
 			}
 			// We want to have lookup failed error
 			// no one should return us ourselves.
@@ -91,6 +94,10 @@ BOOTLOOP:
 		}
 	}
 	return nil // succeed
+}
+
+func (d *KadDHT) Close(){
+	close(d.reschan)
 }
 
 func (d *KadDHT) healthLoop() {

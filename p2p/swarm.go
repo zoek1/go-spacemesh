@@ -466,7 +466,7 @@ func (s *swarm) onRemoteClientMessage(msg net.IncomingMessageEvent) error {
 
 // Broadcast creates a gossip message signs it and disseminate it to neighbors
 func (s *swarm) Broadcast(protocol string, payload []byte) error {
-	s.lNode.Info("Broadcasting %v protocol message")
+	s.lNode.Info("Broadcasting %v protocol message", protocol)
 	// start by making the message
 	pm := &pb.ProtocolMessage{
 		Metadata: message.NewProtocolMessageMetadata(s.LocalNode().PublicKey(), protocol, true),

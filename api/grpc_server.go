@@ -78,6 +78,7 @@ func (s SpaceMeshGrpcService) SendMessage(ctx context.Context, in *pb.InMessage)
 func (s SpaceMeshGrpcService) Broadcast(ctx context.Context, in *pb.InMessage) (*pb.SimpleMessage, error) {
 	err := s.app.Broadcast(in.ProtocolName, in.Payload)
 	if err != nil {
+		log.Error("Error trying to broadcast err:", err)
 		return nil, err
 	}
 	return &pb.SimpleMessage{Value: "ok"}, nil

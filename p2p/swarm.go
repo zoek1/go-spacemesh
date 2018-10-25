@@ -439,13 +439,13 @@ func (s *swarm) onRemoteClientMessage(msg net.IncomingMessageEvent) error {
 
 	// participate in gossip even if we don't know this protocol
 	if pm.Metadata.Gossip { // todo : use gossip uid
-		s.LocalNode().Debug("Got gossip message! relaying it")
+		s.LocalNode().Info("Got gossip message! relaying it")
 		// don't block anyway
 		err = s.gossip.Broadcast(decPayload) // err only if this is an old message
 	}
 
-	if err != nil {
-		return nil
+	if err != nil && err.Error() == "old message" { //hotfix: fix with proper error classification
+		return nil // finish here, this is an old message no need to process.
 	}
 	// route authenticated message to the reigstered protocol
 	s.protocolHandlerMutex.RLock()
@@ -466,6 +466,7 @@ func (s *swarm) onRemoteClientMessage(msg net.IncomingMessageEvent) error {
 
 // Broadcast creates a gossip message signs it and disseminate it to neighbors
 func (s *swarm) Broadcast(protocol string, payload []byte) error {
+	s.lNode.Info("Broadcasting %v protocol message")
 	// start by making the message
 	pm := &pb.ProtocolMessage{
 		Metadata: message.NewProtocolMessageMetadata(s.LocalNode().PublicKey(), protocol, true),

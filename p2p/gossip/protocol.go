@@ -170,10 +170,6 @@ func (s *Neighborhood) Peer(pubkey string) (node.Node, net.Connection) {
 // the actual broadcast procedure, loop on peers and add the message to their queues
 func (s *Neighborhood) Broadcast(msg []byte) error {
 
-	if len(s.peers) == 0 {
-		return errors.New("you have no peers to broadcast to")
-	}
-
 	s.oldMessageMu.RLock()
 	if _, ok := s.oldMessageQ[string(msg)]; ok {
 		// todo : - have some more metrics for termination
@@ -181,6 +177,10 @@ func (s *Neighborhood) Broadcast(msg []byte) error {
 		return errors.New("old message")
 	}
 	s.oldMessageMu.RUnlock()
+
+	if len(s.peers) == 0 {
+		return errors.New("you have no peers to broadcast to")
+	}
 
 	s.oldMessageMu.Lock()
 	s.oldMessageQ[string(msg)] = struct{}{}

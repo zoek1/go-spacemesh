@@ -71,7 +71,7 @@ func defaultBaseConfig() BaseConfig {
 }
 
 // LoadConfig load the config file
-func LoadConfig(fileLocation string) (err error) {
+func LoadConfig(fileLocation string, vip *viper.Viper) (err error) {
 	log.Info("Parsing config file at location: %s", fileLocation)
 
 	if fileLocation != "" {
@@ -79,12 +79,12 @@ func LoadConfig(fileLocation string) (err error) {
 
 		slice := len(filename) - len(filepath.Ext(filename))
 
-		viper.SetConfigName(filename[:slice])
-		viper.AddConfigPath(filepath.Dir(filename))
-		viper.AddConfigPath(".")
-		viper.AddConfigPath("../")
+		vip.SetConfigName(filename[:slice])
+		vip.AddConfigPath(filepath.Dir(filename))
+		vip.AddConfigPath(".")
+		vip.AddConfigPath("../")
 
-		err = viper.ReadInConfig()
+		err = vip.ReadInConfig()
 
 		if err != nil {
 			return fmt.Errorf("failed to read config file %v", err)

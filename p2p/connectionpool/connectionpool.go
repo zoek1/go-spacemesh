@@ -149,7 +149,7 @@ func (cp *ConnectionPool) handleNewConnection(rPub crypto.PublicKey, newConn net
 }
 
 func (cp *ConnectionPool) handleClosedConnection(conn net.Connection) {
-	cp.net.Logger().Info("connection %s was closed", conn.String())
+	cp.net.Logger().Debug("connection %v with %v was closed", conn.String())
 	cp.connMutex.Lock()
 	rPub := conn.RemotePublicKey().String()
 	cur, ok := cp.connections[rPub]
@@ -198,6 +198,23 @@ func (cp *ConnectionPool) GetConnection(address string, remotePub crypto.PublicK
 	// wait for the connection to be established, if the channel is closed (in case of dialing error) will return nil
 	res := <-pendChan
 	return res.conn, res.err
+}
+
+func (cp *ConnectionPool) TryExistingConnection(remotePub crypto.PublicKey) (net.Connection, error) {
+	cp.connMutex.RLock()
+	if cp.shutdown {
+		cp.connMutex.RUnlock()
+		return nil, errors.New("ConnectionPool was shut down")
+	}
+	// look for the connection in the pool
+	conn, found := cp.connections[remotePub.String()]
+	if found {
+		cp.connMutex.RUnlock()
+		return conn, nil
+	}
+	cp.connMutex.RUnlock()
+
+	return nil, errors.New("Connection doesn't exist")
 }
 
 func (cp *ConnectionPool) beginEventProcessing() {

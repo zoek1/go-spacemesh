@@ -12,17 +12,76 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
+	"github.com/spacemeshos/go-spacemesh/p2p"
 )
 
 // SpaceMeshGrpcService is a grpc server providing the Spacemesh api
 type SpaceMeshGrpcService struct {
 	Server *grpc.Server
 	Port   uint
+	app p2p.Service
 }
 
 // Echo returns the response for an echo api request
 func (s SpaceMeshGrpcService) Echo(ctx context.Context, in *pb.SimpleMessage) (*pb.SimpleMessage, error) {
 	return &pb.SimpleMessage{Value: in.Value}, nil
+}
+
+// Echo returns the response for an echo api request
+func (s SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Protocol) (*pb.SimpleMessage, error) {
+	cn := s.app.RegisterProtocol(in.Name)
+	destinationAddress, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+  strconv.Itoa(int(in.Port)) )
+	if err != nil {
+		return nil, err
+	}
+	source,err := net.ResolveUDPAddr("udp4", "127.0.0.1:1234")
+	if err != nil {
+		return nil, err
+	}
+	log.Info("%v %v", source, destinationAddress)
+	connection, err := net.DialUDP("udp4", source, destinationAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	go func(){
+		defer connection.Close()
+	Loop:
+		for {
+			select {
+			case ime, ok := <-cn:
+				if !ok  {
+					break Loop
+				}
+				log.Info("Sending message %v to %v",destinationAddress, ime.Data() )
+				_, err := connection.Write(ime.Data())
+				if err != nil {
+					log.Error("Received error : %v", err)
+				}
+			}
+		}
+	}()
+
+	return &pb.SimpleMessage{Value: "ok"}, nil
+}
+
+// Echo returns the response for an echo api request
+func (s SpaceMeshGrpcService) SendMessage(ctx context.Context, in *pb.InMessage) (*pb.SimpleMessage, error) {
+	err := s.app.SendMessage(in.NodeID, in.ProtocolName,in.Payload)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.SimpleMessage{Value: "ok"}, nil
+}
+
+// Echo returns the response for an echo api request
+func (s SpaceMeshGrpcService) Broadcast(ctx context.Context, in *pb.InMessage) (*pb.SimpleMessage, error) {
+	err := s.app.Broadcast(in.ProtocolName, in.Payload)
+	if err != nil {
+		log.Error("Error trying to broadcast err:", err)
+		return nil, err
+	}
+	return &pb.SimpleMessage{Value: "ok"}, nil
 }
 
 // StopService stops the grpc service.
@@ -34,10 +93,10 @@ func (s SpaceMeshGrpcService) StopService() {
 }
 
 // NewGrpcService create a new grpc service using config data.
-func NewGrpcService() *SpaceMeshGrpcService {
+func NewGrpcService(app p2p.Service )*SpaceMeshGrpcService {
 	port := config.ConfigValues.GrpcServerPort
 	server := grpc.NewServer()
-	return &SpaceMeshGrpcService{Server: server, Port: uint(port)}
+	return &SpaceMeshGrpcService{Server: server, Port: uint(port), app : app}
 }
 
 // StartService starts the grpc service.

@@ -1,6 +1,7 @@
 package simulator
 
 import (
+	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"io"
@@ -91,6 +92,11 @@ func (sm simMessage) Sender() node.Node {
 	return sm.sender
 }
 
+func (sn *Node) Start() error {
+	// on simulation this doesn't really matter yet.
+	return nil
+}
+
 // SendMessage sends a protocol message to the specified nodeID.
 // returns error if the node cant be found. corresponds to `Service.SendMessage`
 func (sn *Node) SendMessage(nodeID string, protocol string, payload []byte) error {
@@ -101,6 +107,20 @@ func (sn *Node) SendMessage(nodeID string, protocol string, payload []byte) erro
 		thec <- simMessage{payload, sn.Node}
 		sn.sim.updateNode(nodeID, sn)
 	}
+	//log.Info("%v >> %v (%v)", sn.Node.PublicKey(), nodeID, payload)
+	return nil
+}
+
+// Broadcast
+func (sn *Node) Broadcast(protocol string, payload []byte) error {
+	sn.sim.mutex.RLock()
+	for n := range sn.sim.protocolHandler {
+		if c, ok := sn.sim.protocolHandler[n][protocol]; ok {
+			c <- simMessage{payload, sn.Node}
+		}
+	}
+	sn.sim.mutex.RUnlock()
+	log.Info("%v >> All ( Gossip ) (%v)", sn.Node.PublicKey(), payload)
 	return nil
 }
 

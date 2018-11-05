@@ -7,10 +7,47 @@ message SimpleMessage {
     string value = 1;
 }
 
+message Protocol {
+    string name = 1;
+    int32 port =2;
+}
+
+message PeerList {
+    repeated string peerInfo = 1;
+}
+
+message InMessage {
+    string nodeID = 1;
+    string protocolName = 2;
+    bytes payload =3;
+}
+
 service SpaceMeshService {
     rpc Echo(SimpleMessage) returns (SimpleMessage) {
         option (google.api.http) = {
           post: "/v1/example/echo"
+          body: "*"
+        };
+    }
+
+    rpc RegisterProtocol(Protocol) returns (SimpleMessage){
+        option (google.api.http) = {
+          post: "/v1/register"
+          body: "*"
+        };
+    }
+
+
+    rpc SendMessage(InMessage) returns (SimpleMessage){
+        option (google.api.http) = {
+          post: "/v1/send"
+          body: "*"
+        };
+    }
+
+    rpc Broadcast(InMessage) returns (SimpleMessage){
+        option (google.api.http) = {
+          post: "/v1/broadcast"
           body: "*"
         };
     }

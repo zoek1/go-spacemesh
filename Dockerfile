@@ -11,5 +11,8 @@ RUN echo ${BRANCH}
 RUN mkdir -p src/github.com/spacemeshos; cd src/github.com/spacemeshos; git clone https://github.com/spacemeshos/go-spacemesh; cd go-spacemesh; git checkout ${BRANCH}; go build; govendor sync; make
 RUN cp /go/src/github.com/spacemeshos/go-spacemesh/config.toml /go
 
-ENTRYPOINT /go/src/github.com/spacemeshos/go-spacemesh/go-spacemesh
+ENTRYPOINT /go/src/github.com/spacemeshos/go-spacemesh/go-spacemesh $BOOTPARAMS
+
 EXPOSE 7513
+EXPOSE 9090
+EXPOSE 9091

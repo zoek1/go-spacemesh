@@ -10,22 +10,25 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
+	"github.com/spacemeshos/go-spacemesh/p2p/message"
 	"github.com/spacemeshos/go-spacemesh/p2p/net"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/pb"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
-	"github.com/spacemeshos/go-spacemesh/p2p/timesync"
+	"github.com/spacemeshos/go-spacemesh/timesync"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 )
 
 func p2pTestInstance(t testing.TB, config config.Config) *swarm {
 	port, err := node.GetUnboundedPort()
 	assert.NoError(t, err, "Error getting a port", err)
 	config.TCPPort = port
-	p, err := newSwarm(config, true) //false)
+	p, err := newSwarm(config, true, true)
 	assert.NoError(t, err, "Error creating p2p stack, err: %v", err)
+	assert.NotNil(t, p)
 	return p
 }
 
@@ -35,40 +38,38 @@ const examplePayload = "Example"
 func TestNew(t *testing.T) {
 	s, err := New(config.DefaultConfig())
 	assert.NoError(t, err, err)
+	err = s.Start()
+	assert.NoError(t, err, err)
 	assert.NotNil(t, s, "its nil")
 	s.Shutdown()
 }
 
 func Test_newSwarm(t *testing.T) {
-	s, err := newSwarm(config.DefaultConfig(), false)
+	s, err := newSwarm(config.DefaultConfig(), true, false)
 	assert.NoError(t, err)
+	err = s.Start()
+	assert.NoError(t, err, err)
 	assert.NotNil(t, s)
 	s.Shutdown()
 }
 
-func TestSwarm_signMessage(t *testing.T) {
-	n, _ := node.GenerateTestNode(t)
-	pm := &pb.ProtocolMessage{
-		Metadata: newProtocolMessageMetadata(n.PublicKey(), exampleProtocol, false),
-		Payload:  []byte(examplePayload),
-	}
-
-	bin, err := proto.Marshal(pm)
+func TestSwarm_Start(t *testing.T) {
+	s, err := newSwarm(config.DefaultConfig(), true, false)
 	assert.NoError(t, err)
-
-	asig, err := n.PrivateKey().Sign(bin)
-
+	assert.NotNil(t, s)
+	err = s.Start()
 	assert.NoError(t, err)
-
-	err = signMessage(n.PrivateKey(), pm)
-	assert.NoError(t, err, err)
-	assert.Equal(t, pm.Metadata.AuthorSign, hex.EncodeToString(asig))
-
+	assert.Equal(t, atomic.LoadUint32(&s.started), uint32(1))
+	err = s.Start()
+	assert.Error(t, err)
+	s.Shutdown()
 }
 
 func TestSwarm_Shutdown(t *testing.T) {
-	s, err := newSwarm(config.DefaultConfig(), false)
+	s, err := newSwarm(config.DefaultConfig(), true, false)
 	assert.NoError(t, err)
+	err = s.Start()
+	assert.NoError(t, err, err)
 	s.Shutdown()
 
 	select {
@@ -77,6 +78,20 @@ func TestSwarm_Shutdown(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Error("Failed to shutdown")
 	}
+}
+
+func TestSwarm_ShutdownNoStart(t *testing.T) {
+	s, err := newSwarm(config.DefaultConfig(), true, false)
+	assert.NoError(t, err)
+	s.Shutdown()
+}
+
+func TestSwarm_RegisterProtocolNoStart(t *testing.T) {
+	s, err := newSwarm(config.DefaultConfig(), true, false)
+	msgs := s.RegisterProtocol("Anton")
+	assert.NotNil(t, msgs)
+	assert.NoError(t, err)
+	s.Shutdown()
 }
 
 func TestSwarm_processMessage(t *testing.T) {
@@ -101,7 +116,7 @@ func TestSwarm_authAuthor(t *testing.T) {
 	assert.NotNil(t, pub)
 
 	pm := &pb.ProtocolMessage{
-		Metadata: newProtocolMessageMetadata(pub, exampleProtocol, false),
+		Metadata: message.NewProtocolMessageMetadata(pub, exampleProtocol, false),
 		Payload:  []byte(examplePayload),
 	}
 	ppm, err := proto.Marshal(pm)
@@ -114,7 +129,7 @@ func TestSwarm_authAuthor(t *testing.T) {
 
 	pm.Metadata.AuthorSign = ssign
 
-	vererr := authAuthor(pm)
+	vererr := message.AuthAuthor(pm)
 	assert.NoError(t, vererr)
 
 	priv2, pub2, err := crypto.GenerateKeyPair()
@@ -129,21 +144,21 @@ func TestSwarm_authAuthor(t *testing.T) {
 
 	pm.Metadata.AuthorSign = ssign
 
-	vererr = authAuthor(pm)
+	vererr = message.AuthAuthor(pm)
 	assert.Error(t, vererr)
 }
 
 func TestSwarm_SignAuth(t *testing.T) {
 	n, _ := node.GenerateTestNode(t)
 	pm := &pb.ProtocolMessage{
-		Metadata: newProtocolMessageMetadata(n.PublicKey(), exampleProtocol, false),
+		Metadata: message.NewProtocolMessageMetadata(n.PublicKey(), exampleProtocol, false),
 		Payload:  []byte(examplePayload),
 	}
 
-	err := signMessage(n.PrivateKey(), pm)
+	err := message.SignMessage(n.PrivateKey(), pm)
 	assert.NoError(t, err)
 
-	err = authAuthor(pm)
+	err = message.AuthAuthor(pm)
 
 	assert.NoError(t, err)
 }
@@ -205,41 +220,51 @@ func TestSwarm_MultipleMessages(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 500; i++ {
 		wg.Add(1)
-		go func() { sendDirectMessage(t, p2, p1.localNode().String(), exchan1, false); wg.Done() }()
+		go func() { sendDirectMessage(t, p2, p1.lNode.String(), exchan1, false); wg.Done() }()
 	}
 	wg.Wait()
 }
 
-func Test_newProtocolMessageMeatadata(t *testing.T) {
-	//newProtocolMessageMetadata()
-	_, pk, _ := crypto.GenerateKeyPair()
-	const gossip = false
-
-	assert.NotNil(t, pk)
-
-	meta := newProtocolMessageMetadata(pk, exampleProtocol, gossip)
-
-	assert.NotNil(t, meta, "should be a metadata")
-	assert.Equal(t, meta.Timestamp, time.Now().Unix())
-	assert.Equal(t, meta.ClientVersion, config.ClientVersion)
-	assert.Equal(t, meta.AuthPubKey, pk.Bytes())
-	assert.Equal(t, meta.Protocol, exampleProtocol)
-	assert.Equal(t, meta.Gossip, gossip)
-	assert.Equal(t, meta.AuthorSign, "")
-
+func TestSwarm_RegisterProtocol(t *testing.T) {
+	const numPeers = 100
+	nodechan := make(chan *swarm)
+	cfg := config.DefaultConfig()
+	for i := 0; i < numPeers; i++ {
+		go func() { // protocols are registered before starting the node and read after that.
+			// there ins't an actual need to sync them.
+			nod := p2pTestInstance(t, cfg)
+			nod.RegisterProtocol(exampleProtocol) // this is example
+			nodechan <- nod
+		}()
+	}
+	i := 0
+	for r := range nodechan {
+		_, ok := r.protocolHandlers[exampleProtocol]
+		assert.True(t, ok)
+		_, ok = r.protocolHandlers["/dht/1.0/find-node/"]
+		assert.True(t, ok)
+		i++
+		if i == numPeers {
+			close(nodechan)
+		}
+	}
 }
 
 func TestSwarm_onRemoteClientMessage(t *testing.T) {
+	cfg := config.DefaultConfig()
+	id, err := node.NewNodeIdentity(cfg, "0.0.0.0:0000", false)
+	assert.NoError(t, err, "we cant make node ?")
+
 	p := p2pTestInstance(t, config.DefaultConfig())
 	nmock := &net.ConnectionMock{}
-	nmock.SetRemotePublicKey(node.GenerateRandomNodeData().PublicKey())
+	nmock.SetRemotePublicKey(id.PublicKey())
 
 	// Test bad format
 
 	msg := []byte("badbadformat")
 	imc := net.IncomingMessageEvent{nmock, msg}
-	err := p.onRemoteClientMessage(imc)
-	assert.Equal(t, err, ErrBadFormat)
+	err = p.onRemoteClientMessage(imc)
+	assert.Equal(t, err, ErrBadFormat1)
 
 	// Test out of sync
 
@@ -293,12 +318,12 @@ func TestSwarm_onRemoteClientMessage(t *testing.T) {
 	session.SetDecrypt([]byte("wont_format_fo_protocol_message"), nil)
 
 	err = p.onRemoteClientMessage(imc)
-	assert.Equal(t, err, ErrBadFormat)
+	assert.Equal(t, err, ErrBadFormat2)
 
 	// Test bad auth sign
 
 	goodmsg := &pb.ProtocolMessage{
-		Metadata: newProtocolMessageMetadata(p.lNode.PublicKey(), exampleProtocol, false), // not signed
+		Metadata: message.NewProtocolMessageMetadata(id.PublicKey(), exampleProtocol, false), // not signed
 		Payload:  []byte(examplePayload),
 	}
 
@@ -314,7 +339,7 @@ func TestSwarm_onRemoteClientMessage(t *testing.T) {
 
 	// Test no protocol
 
-	err = signMessage(p.lNode.PrivateKey(), goodmsg)
+	err = message.SignMessage(id.PrivateKey(), goodmsg)
 	assert.NoError(t, err, err)
 
 	goodbin, _ = proto.Marshal(goodmsg)
@@ -334,6 +359,8 @@ func TestSwarm_onRemoteClientMessage(t *testing.T) {
 	err = p.onRemoteClientMessage(imc)
 
 	assert.NoError(t, err)
+
+	// todo : test gossip codepaths.
 }
 
 func TestBootstrap(t *testing.T) {
@@ -353,6 +380,8 @@ func TestBootstrap(t *testing.T) {
 				bn := p2pTestInstance(t, config.DefaultConfig())
 				bn.lNode.Info("This is a bootnode - %v", bn.lNode.Node.String())
 				bnarr = append(bnarr, node.StringFromNode(bn.lNode.Node))
+				err := bn.Start()
+				assert.NoError(t, err)
 			}
 
 			cfg := config.DefaultConfig()
@@ -366,6 +395,9 @@ func TestBootstrap(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					sw := p2pTestInstance(t, cfg)
+					err := sw.Start()
+					assert.NoError(t, err)
+					sw.waitForBoot()
 					bufchan <- sw
 					wg.Done()
 				}()
@@ -379,19 +411,23 @@ func TestBootstrap(t *testing.T) {
 
 			}
 
-			randnode := swarms[rand.Int31n(int32(len(swarms)))-1]
-			randnode2 := swarms[rand.Int31n(int32(len(swarms)))-1]
+			rand.Seed(time.Now().UnixNano())
+			for z := 0; z < 10; z++ {
 
-			for (randnode == nil || randnode2 == nil) || randnode.lNode.String() == randnode2.lNode.String() {
-				randnode = swarms[rand.Int31n(int32(len(swarms)))-1]
-				randnode2 = swarms[rand.Int31n(int32(len(swarms)))-1]
+				randnode := swarms[rand.Int31n(int32(len(swarms)-1))]
+				randnode2 := swarms[rand.Int31n(int32(len(swarms)-1))]
+
+				//for (randnode == nil || randnode2 == nil) || randnode.lNode.String() == randnode2.lNode.String() {
+				//	randnode = swarms[rand.Int31n(int32(len(swarms)))-1]
+				//	randnode2 = swarms[rand.Int31n(int32(len(swarms)))-1]
+				//}
+
+				randnode.RegisterProtocol(exampleProtocol)
+				recv := randnode2.RegisterProtocol(exampleProtocol)
+
+				sendDirectMessage(t, randnode, randnode2.lNode.PublicKey().String(), recv, true)
 			}
-
-			randnode.RegisterProtocol(exampleProtocol)
-			recv := randnode2.RegisterProtocol(exampleProtocol)
-
-			sendDirectMessage(t, randnode, randnode2.lNode.PublicKey().String(), recv, true)
-			time.Sleep(3 * time.Second)
+			time.Sleep(1 * time.Second)
 		})
 	}
 }

@@ -14,11 +14,17 @@ import (
 type DHT interface {
 	Update(node node.Node)
 	Lookup(pubkey string) (node.Node, error)
+
+	SelectPeers(qty int) []node.Node
 	Bootstrap() error
+
+	Close()
+
+	Size() int
 }
 
 // LookupTimeout is the timelimit we give to a single lookup operation
-const LookupTimeout = 5 * time.Second
+const LookupTimeout = 15 * time.Second
 
 var (
 	// ErrLookupFailed determines that we could'nt find this node in the routing table or network
@@ -38,6 +44,18 @@ type KadDHT struct {
 	fnp *findNodeProtocol
 
 	service service.Service
+
+	reschan chan error
+}
+
+func (d *KadDHT) Size() int {
+	req := make(chan int)
+	d.rt.Size(req)
+	return <-req
+}
+
+func (d *KadDHT) SelectPeers(qty int) []node.Node {
+	return d.rt.SelectPeers(qty)
 }
 
 // New creates a new dht
@@ -47,6 +65,7 @@ func New(node *node.LocalNode, config config.SwarmConfig, service service.Servic
 		local:   node,
 		rt:      NewRoutingTable(config.RoutingTableBucketSize, node.DhtID(), node.Logger),
 		service: service,
+		reschan: make(chan error),
 	}
 	d.fnp = newFindNodeProtocol(service, d.rt)
 	return d
@@ -137,10 +156,13 @@ func filterFindNodeServers(nodes []node.Node, queried map[string]struct{}, alpha
 	// filter out queried servers.
 	i := 0
 	for _, v := range nodes {
-		if _, exist := queried[v.String()]; !exist {
-			nodes[i] = v
-			i++
+		if _, exist := queried[v.String()]; exist {
+			continue
 		}
+
+		nodes[i] = v
+		i++
+
 		if i >= alpha {
 			break
 		}
@@ -164,17 +186,19 @@ func (d *KadDHT) findNodeOp(servers []node.Node, queried map[string]struct{}, id
 
 	// Issue a parallel FindNode op to all servers on the list
 	for i := 0; i < l; i++ {
-		queried[servers[i].String()] = struct{}{}
+		server := servers[i]
+		queried[server.String()] = struct{}{}
+		idx := id
 		// find node protocol adds found nodes to the local routing table
 		// populates queried node's routing table with us and return.
-		go func(i int) {
-			fnd, err := d.fnp.FindNode(servers[i], id)
+		go func(server node.Node, id string) {
+			fnd, err := d.fnp.FindNode(server, id)
 			if err != nil {
 				//TODO: handle errors
 				return
 			}
 			results <- fnd
-		}(i)
+		}(server, idx)
 	}
 
 	done := 0                          // To know when all operations finished

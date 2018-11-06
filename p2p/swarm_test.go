@@ -32,6 +32,11 @@ func p2pTestInstance(t testing.TB, config config.Config) *swarm {
 	return p
 }
 
+func startInstance(t testing.TB, s *swarm) {
+	err := s.Start()
+	assert.NoError(t, err)
+}
+
 const exampleProtocol = "EX"
 const examplePayload = "Example"
 
@@ -184,7 +189,7 @@ func sendDirectMessage(t *testing.T, sender *swarm, recvPub string, inChan chan 
 		}
 		assert.Equal(t, msg.Sender().String(), sender.lNode.String())
 		break
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Error("Took too much time to recieve")
 	}
 }
@@ -192,6 +197,9 @@ func sendDirectMessage(t *testing.T, sender *swarm, recvPub string, inChan chan 
 func TestSwarm_RoundTrip(t *testing.T) {
 	p1 := p2pTestInstance(t, config.DefaultConfig())
 	p2 := p2pTestInstance(t, config.DefaultConfig())
+
+	startInstance(t, p1)
+	startInstance(t, p2)
 
 	exchan1 := p1.RegisterProtocol(exampleProtocol)
 	assert.Equal(t, exchan1, p1.protocolHandlers[exampleProtocol])
@@ -207,6 +215,9 @@ func TestSwarm_RoundTrip(t *testing.T) {
 func TestSwarm_MultipleMessages(t *testing.T) {
 	p1 := p2pTestInstance(t, config.DefaultConfig())
 	p2 := p2pTestInstance(t, config.DefaultConfig())
+
+	startInstance(t, p1)
+	startInstance(t, p2)
 
 	exchan1 := p1.RegisterProtocol(exampleProtocol)
 	assert.Equal(t, exchan1, p1.protocolHandlers[exampleProtocol])
@@ -364,8 +375,8 @@ func TestSwarm_onRemoteClientMessage(t *testing.T) {
 }
 
 func TestBootstrap(t *testing.T) {
-	bootnodes := []int{3}
-	nodes := []int{30}
+	bootnodes := []int{1}
+	nodes := []int{10}
 	rcon := []int{3}
 
 	rand.Seed(time.Now().UnixNano())

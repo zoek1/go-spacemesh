@@ -9,6 +9,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/p2p/simulator"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"math/big"
 	"testing"
 	"time"
 )
@@ -121,11 +122,11 @@ NL:
 	spew.Dump(passed)
 }
 
-func TestSwarm_EveryNodeIsInSelected(t *testing.T) {
+func TestDHT_EveryNodeIsInSelected(t *testing.T) {
 
 	for i := 0; i < 1; i++ {
 		t.Run(fmt.Sprintf("t%v", i), func(t *testing.T) {
-			numPeers, connections := 500, 8
+			numPeers, connections := 30, 8
 
 			bncfg := config.DefaultConfig()
 			sim := simulator.New()
@@ -401,6 +402,107 @@ func TestDHT_Bootstrap2(t *testing.T) {
 			t.Error("Failed to boot within time")
 		}
 	}
+}
+
+func Test_KadRefresh(t *testing.T) {
+
+	dhtid := []byte{10, 10, 10}
+	//dhtid := []byte(local.DhtID())
+
+	//numofbits := 3
+	newid := []byte{9, 10, 10}
+
+	fmt.Printf("%b\r\n", dhtid)
+	fmt.Printf("%b\r\n", newid)
+
+	//for i := 0; i < len(dhtid); i++ {
+	//	if numofbits > 8*(i+1) {
+	//		fmt.Println("continuted ") // shuold never happen
+	//		continue
+	//	}
+	//	toadd := dhtid[:i]
+	//	cur := uint8(dhtid[i])
+	//	fmt.Printf("%b\r\n", cur)
+	//	b := (cur << uint8(numofbits)) ^ cur
+	//	fmt.Printf("new %b\r\ncur %b\r\n", b, cur)
+	//	toadd = append(toadd, b)
+	//	newid = append(newid, toadd...)
+	//	break
+	//}
+
+	dist := node.DhtID(newid).Xor(node.DhtID(dhtid))
+	fmt.Printf("%b\r\n dist: %v, cpl: %v", dist, big.NewInt(0).SetBytes(dist), dist.ZeroPrefixLen())
+	fmt.Println()
+
+	//
+	//fmt.Println("us ", dhtid)
+	//
+	//rnd := node.GenerateRandomNodeData()
+	//
+	//fmt.Println("cpl with random ", dhtid.CommonPrefixLen(rnd.DhtID()))
+	//
+	//fmt.Println("Create similar node")
+	//fmt.Println("Take first part of our node 3")
+	//
+	//same := 3
+	//newid := []byte{}
+	//
+	//diff := 0
+	//for b := 0; b < len(dhtid); b++ {
+	//
+	//	for i := 0; i < len(i); i++ {
+	//		b1 := a[i]
+	//		b2 := b[i]
+	//		for j := 0; j < 8; j++ {
+	//			mask := byte(1 << uint(j))
+	//			if (b1 & mask) != (b2 & mask) {
+	//				diff++
+	//			}
+	//		}
+	//	}
+	//
+	//	if same > 8*(b+1) {
+	//		 continue
+	//	}
+	//	fmt.Println("Appending ", dhtid[:b+1])
+	//	newid = append(newid, []byte(dhtid[:b+1])...)
+	//	break
+	//}
+	//fmt.Println([]byte(dhtid))
+	//fmt.Println(newid)
+	//randbytes, _ := crypto.GetRandomBytes((IDLength/8) - len(newid))
+	//newid = append(newid, randbytes...)
+	//
+	//fmt.Println(newid)
+	//fmt.Println(dhtid.CommonPrefixLen(node.DhtID(newid)))
+	////
+	//fmt.Println("Created ",  newid)
+	//
+	//fmt.Println("cpl ", node.NewDhtID(newid).CommonPrefixLen(dhtid))
+
+	//nodes := node.GenerateRandomNodesData(10)
+	//max := 0
+
+	//for n := range nodes {
+	//	cpl := nodes[n].DhtID().CommonPrefixLen(dhtid)
+	//	if cpl > max {
+	//		max = cpl
+	//	}
+	//	fmt.Println(cpl)
+	//	fmt.Println(nodes[n].DhtID().String())
+	//}
+
+	//fmt.Println("MAX ", max)
+	//
+	//for i := max; i < BucketCount; i++ {
+	//
+	//	randDht := dhtid[:i]
+	//	randbytes, _ := crypto.GetRandomBytes((IDLength/8) - i)
+	//	randDht = append(randbytes, randDht...)
+	//	//fmt.Println(randDht)
+	//	fmt.Println(dhtid.CommonPrefixLen(randDht))
+	//}
+
 }
 
 func Test_filterFindNodeServers(t *testing.T) {

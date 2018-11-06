@@ -32,7 +32,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/pbInMessage"
+              "$ref": "#/definitions/pbBroadcastMessage"
             }
           }
         ],
@@ -121,6 +121,18 @@
     }
   },
   "definitions": {
+    "pbBroadcastMessage": {
+      "type": "object",
+      "properties": {
+        "protocolName": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "string",
+          "format": "byte"
+        }
+      }
+    },
     "pbInMessage": {
       "type": "object",
       "properties": {

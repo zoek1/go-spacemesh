@@ -21,6 +21,7 @@ type Protocol interface {
 	Broadcast(payload []byte) error
 	Start() error
 	Peer(pubkey string) (node.Node, net.Connection)
+	RegisterPeer(node.Node, net.Connection)
 	Shutdown()
 }
 
@@ -32,12 +33,19 @@ type ConnectionFactory interface {
 	GetConnection(address string, pk crypto.PublicKey) (net.Connection, error)
 }
 
+type NodeConPair struct {
+	node.Node
+	net.Connection
+}
+
 type Neighborhood struct {
 	log.Log
 
 	config config.SwarmConfig
 
-	peers        map[string]*peer
+	peers map[string]*peer
+	inc   chan NodeConPair
+
 	morePeersReq chan struct{}
 	remove       chan string
 
@@ -59,6 +67,7 @@ func NewNeighborhood(config config.SwarmConfig, ps PeerSampler, cp ConnectionFac
 		config:       config,
 		morePeersReq: make(chan struct{}, config.RandomConnections),
 		peers:        make(map[string]*peer, config.RandomConnections),
+		inc:          make(chan NodeConPair, config.RandomConnections),
 		oldMessageQ:  make(map[string]struct{}), // todo : remember to drain this
 		ps:           ps,
 		cp:           cp,
@@ -295,6 +304,13 @@ func (s *Neighborhood) Start() error {
 					s.peersMutex.Unlock()
 				}
 				s.morePeersReq <- struct{}{}
+			case inc := <-s.inc:
+				// try to assign the new peer
+				peer := makePeer(inc.Node, inc.Connection, s.Log)
+				s.peersMutex.Lock()
+				s.peers[peer.Node.String()] = peer
+				s.peersMutex.Unlock()
+				go peer.start(s.remove)
 			case <-s.morePeersReq:
 				pl := len(s.peers)
 				num := s.config.RandomConnections - pl
@@ -315,4 +331,8 @@ func (s *Neighborhood) Start() error {
 	<-ret
 
 	return nil
+}
+
+func (s *Neighborhood) RegisterPeer(n node.Node, c net.Connection) {
+	s.inc <- NodeConPair{n, c}
 }

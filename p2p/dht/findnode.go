@@ -7,6 +7,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/dht/pb"
+	"github.com/spacemeshos/go-spacemesh/p2p/net"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"sync"
@@ -42,8 +43,9 @@ type findNodeProtocol struct {
 	rt RoutingTable
 }
 
-type localService interface {
+type swarm interface {
 	LocalNode() *node.LocalNode
+	Peer(pubkey string) (net.Connection, error)
 }
 
 // NewFindNodeProtocol creates a new FindNodeProtocol instance.
@@ -56,7 +58,7 @@ func newFindNodeProtocol(service service.Service, rt RoutingTable) *findNodeProt
 		service:        service,
 	}
 
-	if srv, ok := service.(localService); ok {
+	if srv, ok := service.(swarm); ok {
 		p.log = srv.LocalNode().Log
 	} else {
 		p.log = log.AppLog
@@ -224,6 +226,17 @@ func (p *findNodeProtocol) handleIncomingRequest(sender crypto.PublicKey, reqID,
 		//}
 		p.log.Error("failed sending response message to %v, err:%v", sender.String(), err)
 	}
+
+	s, ok := p.service.(swarm)
+	if !ok {
+		return
+	}
+	c, err := s.Peer(sender.String())
+	if err != nil {
+		return
+	}
+	c.Close()
+
 }
 
 // Handle an incoming pong message from a remote node

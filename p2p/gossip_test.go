@@ -19,7 +19,7 @@ func TestSwarm_EveryNodeIsInSelected(t *testing.T) {
 		protoC chan service.Message
 	}
 
-	numPeers, connections := 10, 3
+	numPeers, connections := 30, 8
 
 	nodes := make([]*swarm, numPeers)
 	chans := make([]chan service.Message, numPeers)
@@ -62,7 +62,7 @@ func TestSwarm_EveryNodeIsInSelected(t *testing.T) {
 	for n := range nchan {
 		nodes[i] = n.s
 		chans[i] = n.protoC
-		selected[i] = n.s.dht.SelectPeers(5)
+		selected[i] = n.s.dht.SelectPeers(connections)
 		i++
 		if i >= numPeers {
 			close(nchan)

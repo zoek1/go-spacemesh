@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultConfigFileName  = "config.toml"
+	defaultConfigFileName  = "./config.toml"
 	defaultLogFileName     = "spacemesh.log"
 	defaultAccountFileName = "accounts"
 	defaultDataDirName     = "spacemesh"
@@ -74,26 +74,26 @@ func defaultBaseConfig() BaseConfig {
 func LoadConfig(fileLocation string, vip *viper.Viper) (err error) {
 	log.Info("Parsing config file at location: %s", fileLocation)
 
-	if fileLocation != "" {
-		filename := filepath.Base(fileLocation)
+	if fileLocation == "" {
+		fileLocation = defaultConfigFileName
+	}
 
-		slice := len(filename) - len(filepath.Ext(filename))
+	vip.SetConfigFile(fileLocation)
+	err = vip.ReadInConfig()
 
-		vip.SetConfigName(filename[:slice])
-		vip.AddConfigPath(filepath.Dir(filename))
-		vip.AddConfigPath(".")
-		vip.AddConfigPath("../")
-
-		err = vip.ReadInConfig()
-
+	if err != nil {
+		if fileLocation != defaultConfigFileName {
+			log.Warning("failed loading %v trying %v", fileLocation, defaultConfigFileName)
+			vip.SetConfigFile(defaultConfigFileName)
+			err = vip.ReadInConfig()
+		}
+		// we change err so check again
 		if err != nil {
 			return fmt.Errorf("failed to read config file %v", err)
 		}
-
-		return nil
 	}
 
-	return fmt.Errorf("failed to read config file")
+	return nil
 }
 
 // SetConfigFile overrides the default config file path

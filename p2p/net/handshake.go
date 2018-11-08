@@ -69,10 +69,10 @@ func GenerateHandshakeRequestData(localPublicKey crypto.PublicKey, localPrivateK
 	data.PubKey = ephemeral.PubKey().SerializeUncompressed()
 
 	// start HMAC-SHA-256
-	hm := hmac.New(sha256.New, keyM)
-	hm.Write(iv) // iv is hashed
-	data.Hmac = hm.Sum(nil)
-	data.Sign = ""
+	//hm := hmac.New(sha256.New, keyM)
+	//hm.Write(iv) // iv is hashed
+	//data.Hmac = hm.Sum(nil)
+	//data.Sign = ""
 
 	data.Port = uint32(port)
 
@@ -138,12 +138,12 @@ func ProcessHandshakeRequest(networkID int8, lPub crypto.PublicKey, lPri crypto.
 	keyM := derivedKey[32:]
 
 	// verify mac
-	hm := hmac.New(sha256.New, keyM)
-	hm.Write(req.Iv)
-	expectedMAC := hm.Sum(nil)
-	if !hmac.Equal(req.Hmac, expectedMAC) {
-		return nil, nil, errors.New("invalid hmac")
-	}
+	//hm := hmac.New(sha256.New, keyM)
+	//hm.Write(req.Iv)
+	//expectedMAC := hm.Sum(nil)
+	//if !hmac.Equal(req.Hmac, expectedMAC) {
+	//	return nil, nil, errors.New("invalid hmac")
+	//}
 
 	// verify signature
 	sig := req.Sign
@@ -226,14 +226,14 @@ func ProcessHandshakeResponse(remotePub crypto.PublicKey, s NetworkSession, resp
 		return errors.New("expected same session id")
 	}
 
-	// verify mac
-	hm := hmac.New(sha256.New, s.KeyM())
-	hm.Write(resp.Iv)
-	expectedMAC := hm.Sum(nil)
-
-	if !hmac.Equal(resp.Hmac, expectedMAC) {
-		return fmt.Errorf("invalid hmac need %v got %v", resp.Hmac, expectedMAC)
-	}
+	//// verify mac
+	//hm := hmac.New(sha256.New, s.KeyM())
+	//hm.Write(resp.Iv)
+	//expectedMAC := hm.Sum(nil)
+	//
+	//if !hmac.Equal(resp.Hmac, expectedMAC) {
+	//	return fmt.Errorf("invalid hmac need %v got %v", resp.Hmac, expectedMAC)
+	//}
 
 	// verify signature
 	sig := resp.Sign

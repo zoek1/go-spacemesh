@@ -5,6 +5,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/api/config"
 	"github.com/spacemeshos/go-spacemesh/api/pb"
 	"github.com/spacemeshos/go-spacemesh/log"
+	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"strconv"
 
 	"net"
@@ -45,7 +46,7 @@ func (s SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Proto
 		return nil, err
 	}
 
-	go func() {
+	go func(chan service.Message) {
 		defer connection.Close()
 	Loop:
 		for {
@@ -61,7 +62,7 @@ func (s SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Proto
 				}
 			}
 		}
-	}()
+	}(cn)
 
 	return &pb.SimpleMessage{Value: "ok"}, nil
 }
@@ -94,8 +95,8 @@ func (s SpaceMeshGrpcService) StopService() {
 }
 
 // NewGrpcService create a new grpc service using config data.
-func NewGrpcService(app p2p.Service) *SpaceMeshGrpcService {
-	port := config.ConfigValues.GrpcServerPort
+func NewGrpcService(config *config.Config, app p2p.Service) *SpaceMeshGrpcService {
+	port := config.GrpcServerPort
 	server := grpc.NewServer()
 	return &SpaceMeshGrpcService{Server: server, Port: uint(port), app: app}
 }
@@ -107,8 +108,7 @@ func (s SpaceMeshGrpcService) StartService(status chan bool) {
 
 // This is a blocking method designed to be called using a go routine
 func (s SpaceMeshGrpcService) startServiceInternal(status chan bool) {
-	port := config.ConfigValues.GrpcServerPort
-	addr := ":" + strconv.Itoa(int(port))
+	addr := ":" + strconv.Itoa(int(s.Port))
 
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -121,7 +121,7 @@ func (s SpaceMeshGrpcService) startServiceInternal(status chan bool) {
 	// SubscribeOnNewConnections reflection service on gRPC server
 	reflection.Register(s.Server)
 
-	log.Debug("grpc API listening on port %d", port)
+	log.Debug("grpc API listening on port %d", s.Port)
 
 	if status != nil {
 		status <- true

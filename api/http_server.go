@@ -23,8 +23,8 @@ type JSONHTTPServer struct {
 }
 
 // NewJSONHTTPServer creates a new json http server.
-func NewJSONHTTPServer() *JSONHTTPServer {
-	return &JSONHTTPServer{Port: uint(config.ConfigValues.JSONServerPort), stop: make(chan bool)}
+func NewJSONHTTPServer(config *config.Config) *JSONHTTPServer {
+	return &JSONHTTPServer{Port: uint(config.JSONServerPort), stop: make(chan bool)}
 }
 
 // StopService stops the server.
@@ -57,7 +57,7 @@ func (s JSONHTTPServer) startInternal(status chan bool) {
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 
 	// register the http server on the local grpc server
-	portStr := strconv.Itoa(int(config.ConfigValues.GrpcServerPort))
+	portStr := strconv.Itoa(int(s.Port))
 	echoEndpoint := flag.String("api_endpoint", "localhost:"+portStr, "endpoint of api grpc service")
 
 	if err := gw.RegisterSpaceMeshServiceHandlerFromEndpoint(ctx, mux, *echoEndpoint, opts); err != nil {

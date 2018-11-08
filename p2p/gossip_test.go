@@ -272,29 +272,31 @@ func TestSwarm_EveroneRecvMessage(t *testing.T) {
 	//	}
 
 	//this is commented since sometimes not all we're selelcted but the node they selected added them aswell //assert.Equal(t, len(passed), numPeers)
+	for i := 0; i < 5; i++ {
+		payload := []byte(RandString(10))
+		randnode := nodes[rand.Int31n(int32(len(nodes)-1))]
+		randnode.Broadcast("gossip", payload)
 
-	payload := []byte(RandString(10))
-	randnode := nodes[rand.Int31n(int32(len(nodes)-1))]
-	randnode.Broadcast("gossip", payload)
+		got := 0
 
-	got := 0
-
-	for m := range nodes {
-		if nodes[m].lNode.String() == randnode.lNode.String() {
-			continue // skip ourselves
+		for m := range nodes {
+			if nodes[m].lNode.String() == randnode.lNode.String() {
+				continue // skip ourselves
+			}
+			tmr := time.NewTimer(time.Second * 15) // estimated gossip timeout
+			select {
+			case msg := <-chans[m]:
+				fmt.Println("got message", msg)
+				got++
+				//assert.Equal(t, msg.Data(), payload)
+			case <-tmr.C:
+				break
+			}
 		}
-		tmr := time.NewTimer(time.Second * 15) // estimated gossip timeout
-		select {
-		case msg := <-chans[m]:
-			fmt.Println("got message", msg)
-			got++
-			//assert.Equal(t, msg.Data(), payload)
-		case <-tmr.C:
-			break
-		}
+
+		assert.Equal(t, got, len(nodes)-1) // minus the one we used to send
+
 	}
-
-	assert.Equal(t, got, len(nodes)-1) // minus the one we used to send
 
 	time.Sleep(1 * time.Second)
 

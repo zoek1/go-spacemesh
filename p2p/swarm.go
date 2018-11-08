@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/gogo/protobuf/proto"
+	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
 	"github.com/spacemeshos/go-spacemesh/p2p/connectionpool"
 	"github.com/spacemeshos/go-spacemesh/p2p/dht"
@@ -149,22 +150,24 @@ func (s *swarm) Start() error {
 				s.Shutdown()
 			}
 			close(s.bootChan)
-			s.lNode.Info("DHT State with %d peers in %v", s.dht.Size(), time.Since(b))
+			s.lNode.Info("DHT Bootstrapped with %d peers in %v", s.dht.Size(), time.Since(b))
 		}()
 	}
 
-	go func() {
-		if s.config.SwarmConfig.Bootstrap {
-			s.waitForBoot()
-		}
-		err := s.gossip.Start()
-		if err != nil {
-			s.gossipErr = err
-			s.lNode.Error("Failed to start gossip, err:", err)
-			s.Shutdown()
-		}
-		close(s.gossipC)
-	}() // todo handle error async
+	if s.config.SwarmConfig.Gossip {
+		go func() {
+			if s.config.SwarmConfig.Bootstrap {
+				s.waitForBoot()
+			}
+			err := s.gossip.Start()
+			if err != nil {
+				s.gossipErr = err
+				s.lNode.Error("Failed to start gossip, err:", err)
+				s.Shutdown()
+			}
+			close(s.gossipC)
+		}() // todo handle error async
+	}
 
 	return nil
 }
@@ -185,22 +188,45 @@ func (s *swarm) connectionPool() *connectionpool.ConnectionPool {
 // req.destId: receiver remote node public key/id
 // Local request to send a message to a remote node
 func (s *swarm) SendMessage(peerPubKey string, protocol string, payload []byte) error {
+	if peerPubKey == s.lNode.PublicKey().String() {
+		return errors.New("you can't send a message to yourself")
+	}
+
 	s.lNode.Info("Sending message to %v", peerPubKey)
 	var err error
 	var peer node.Node
 	var conn net.Connection
 
-	peer, conn = s.gossip.Peer(peerPubKey) // check if he's a neighbor
-	if peer == node.EmptyNode {
-		peer, err = s.dht.Lookup(peerPubKey) // blocking, might issue a network lookup that'll take time.
+	if s.config.SwarmConfig.Gossip {
+		// we don't want to query gossip before
+		select {
+		case <-s.gossipC:
+			peer, conn = s.gossip.Peer(peerPubKey)
+		default:
+		}
+	}
 
+	if peer == node.EmptyNode {
+		//check if we're connected before issuing a lookup
+		pubkey, err := crypto.NewPublicKeyFromString(peerPubKey)
 		if err != nil {
 			return err
 		}
-		conn, err = s.cPool.GetConnection(peer.Address(), peer.PublicKey()) // blocking, might take some time in case there is no connection
-		if err != nil {
-			s.lNode.Warning("failed to send message to %v, no valid connection. err: %v", peer.String(), err)
-			return err
+
+		conn, err = s.cPool.TryExistingConnection(pubkey)
+		if err != nil { // there was no existing connection
+			peer, err = s.dht.Lookup(peerPubKey) // blocking, might issue a network lookup that'll take time.
+
+			if err != nil {
+				return err
+			}
+			conn, err = s.cPool.GetConnection(peer.Address(), peer.PublicKey()) // blocking, might take some time in case there is no connection
+			if err != nil {
+				s.lNode.Warning("failed to send message to %v, no valid connection. err: %v", peer.String(), err)
+				return err
+			}
+		} else {
+			peer = node.New(pubkey, "")
 		}
 	}
 
@@ -243,7 +269,16 @@ func (s *swarm) SendMessage(peerPubKey string, protocol string, payload []byte) 
 
 	err = conn.Send(final)
 	session.EncryptGuard().Unlock()
-
+	// Something went wrong with sending the message
+	if err != nil {
+		s.LocalNode().Info("Retrying sending message to %v, past err: %v", peerPubKey, err)
+		// maybe the connection was replaced
+		_, err = s.cPool.GetConnection(peer.Address(), peer.PublicKey())
+		if err == nil {
+			// got a connection so try again
+			err = s.SendMessage(peerPubKey, protocol, payload)
+		}
+	}
 	return err
 }
 
@@ -311,11 +346,14 @@ func (s *swarm) listenToNetworkMessages() {
 
 func (s *swarm) handleNewConnectionEvents() {
 	newConnEvents := s.network.SubscribeOnNewRemoteConnections()
+	clsing := s.connectionPool().ClosingConnections()
 Loop:
 	for {
 		select {
+		case cls := <-clsing:
+			go s.gossip.Disconnect(cls)
 		case nce := <-newConnEvents:
-			go func(nod node.Node) { s.dht.Update(nod) }(nce.Node)
+			go func(newcon net.NewConnectionEvent) { s.dht.Update(nce.Node); s.gossip.RegisterPeer(nce.Node, nce.Conn) }(nce)
 		case <-s.shutdown:
 			break Loop
 		}
@@ -373,7 +411,6 @@ var (
 // c: connection we got this message on
 // msg: binary protobufs encoded data
 func (s *swarm) onRemoteClientMessage(msg net.IncomingMessageEvent) error {
-
 	if msg.Message == nil || msg.Conn == nil {
 		s.lNode.Fatal("Fatal error: Got nil message or connection")
 		return ErrBadFormat1
@@ -485,4 +522,16 @@ func (s *swarm) Broadcast(protocol string, payload []byte) error {
 	}
 
 	return s.gossip.Broadcast(msg)
+}
+
+func (s *swarm) Peer(pubkey string) (net.Connection, error) {
+	pb, err := crypto.NewPublicKeyFromString(pubkey)
+	if err != nil {
+		return nil, err
+	}
+	c, err := s.cPool.TryExistingConnection(pb)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }

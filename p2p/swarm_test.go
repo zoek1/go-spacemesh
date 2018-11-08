@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"encoding/hex"
+	"github.com/spacemeshos/go-spacemesh/log"
 	"testing"
 	"time"
 
@@ -30,6 +31,11 @@ func p2pTestInstance(t testing.TB, config config.Config) *swarm {
 	assert.NoError(t, err, "Error creating p2p stack, err: %v", err)
 	assert.NotNil(t, p)
 	return p
+}
+
+func startInstance(t testing.TB, s *swarm) {
+	err := s.Start()
+	assert.NoError(t, err)
 }
 
 const exampleProtocol = "EX"
@@ -174,6 +180,8 @@ func RandString(n int) string {
 }
 
 func sendDirectMessage(t *testing.T, sender *swarm, recvPub string, inChan chan service.Message, checkpayload bool) {
+	rand := RandString(5)
+	sender.lNode.Info("(%v) TEST Message from %v To %v ", rand, sender.lNode.String(), recvPub)
 	payload := []byte(RandString(10))
 	err := sender.SendMessage(recvPub, exampleProtocol, payload)
 	assert.NoError(t, err)
@@ -183,8 +191,9 @@ func sendDirectMessage(t *testing.T, sender *swarm, recvPub string, inChan chan 
 			assert.Equal(t, msg.Data(), payload)
 		}
 		assert.Equal(t, msg.Sender().String(), sender.lNode.String())
+		sender.lNode.Info("(%v) Sent succesfully", rand)
 		break
-	case <-time.After(2 * time.Second):
+	case <-time.After(5 * time.Second):
 		t.Error("Took too much time to recieve")
 	}
 }
@@ -192,6 +201,9 @@ func sendDirectMessage(t *testing.T, sender *swarm, recvPub string, inChan chan 
 func TestSwarm_RoundTrip(t *testing.T) {
 	p1 := p2pTestInstance(t, config.DefaultConfig())
 	p2 := p2pTestInstance(t, config.DefaultConfig())
+
+	startInstance(t, p1)
+	startInstance(t, p2)
 
 	exchan1 := p1.RegisterProtocol(exampleProtocol)
 	assert.Equal(t, exchan1, p1.protocolHandlers[exampleProtocol])
@@ -207,6 +219,9 @@ func TestSwarm_RoundTrip(t *testing.T) {
 func TestSwarm_MultipleMessages(t *testing.T) {
 	p1 := p2pTestInstance(t, config.DefaultConfig())
 	p2 := p2pTestInstance(t, config.DefaultConfig())
+
+	startInstance(t, p1)
+	startInstance(t, p2)
 
 	exchan1 := p1.RegisterProtocol(exampleProtocol)
 	assert.Equal(t, exchan1, p1.protocolHandlers[exampleProtocol])
@@ -363,71 +378,99 @@ func TestSwarm_onRemoteClientMessage(t *testing.T) {
 	// todo : test gossip codepaths.
 }
 
+func testBootstrapping(t testing.TB, bootnodes int, nodes int, rcon int) []*swarm {
+	bufchan := make(chan *swarm, nodes)
+
+	bnarr := []string{}
+
+	for k := 0; k < bootnodes; k++ {
+		bn := p2pTestInstance(t, config.DefaultConfig())
+		bn.lNode.Info("This is a bootnode - %v", bn.lNode.Node.String())
+		bnarr = append(bnarr, node.StringFromNode(bn.lNode.Node))
+		err := bn.Start()
+		assert.NoError(t, err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.SwarmConfig.Bootstrap = true
+	cfg.SwarmConfig.RandomConnections = rcon
+	cfg.SwarmConfig.BootstrapNodes = bnarr
+
+	var wg sync.WaitGroup
+
+	for j := 0; j < nodes; j++ {
+		wg.Add(1)
+		go func() {
+			sw := p2pTestInstance(t, cfg)
+			err := sw.Start()
+			assert.NoError(t, err)
+			err = sw.waitForBoot()
+			if assert.NoError(t, err) {
+				bufchan <- sw
+			}
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	close(bufchan)
+	swarms := []*swarm{}
+	for s := range bufchan {
+		swarms = append(swarms, s)
+	}
+
+	return swarms
+}
+
+// this is a multi-value bootstrap test. it will run all configured numbers in the top of the function
+// TODO: add more params (bucketsize, alpha, etc..). to make this illustrate test from the test plan in our wiki
+// so it can be used as model for integration/systems tests.
 func TestBootstrap(t *testing.T) {
-	bootnodes := []int{3}
-	nodes := []int{30}
+	bootnodes := []int{1}
+	nodes := []int{10}
 	rcon := []int{3}
 
 	rand.Seed(time.Now().UnixNano())
 
 	for i := 0; i < len(nodes); i++ {
 		t.Run(fmt.Sprintf("Peers:%v/randconn:%v", nodes[i], rcon[i]), func(t *testing.T) {
-			bufchan := make(chan *swarm, nodes[i])
-
-			bnarr := []string{}
-
-			for k := 0; k < bootnodes[i]; k++ {
-				bn := p2pTestInstance(t, config.DefaultConfig())
-				bn.lNode.Info("This is a bootnode - %v", bn.lNode.Node.String())
-				bnarr = append(bnarr, node.StringFromNode(bn.lNode.Node))
-				err := bn.Start()
-				assert.NoError(t, err)
-			}
-
-			cfg := config.DefaultConfig()
-			cfg.SwarmConfig.Bootstrap = true
-			cfg.SwarmConfig.RandomConnections = rcon[i]
-			cfg.SwarmConfig.BootstrapNodes = bnarr
-
-			var wg sync.WaitGroup
-
-			for j := 0; j < nodes[i]; j++ {
-				wg.Add(1)
-				go func() {
-					sw := p2pTestInstance(t, cfg)
-					err := sw.Start()
-					assert.NoError(t, err)
-					sw.waitForBoot()
-					bufchan <- sw
-					wg.Done()
-				}()
-			}
-
-			wg.Wait()
-			close(bufchan)
-			swarms := []*swarm{}
-			for s := range bufchan {
-				swarms = append(swarms, s)
-
-			}
-
-			rand.Seed(time.Now().UnixNano())
-			for z := 0; z < 10; z++ {
-
-				randnode := swarms[rand.Int31n(int32(len(swarms)-1))]
-				randnode2 := swarms[rand.Int31n(int32(len(swarms)-1))]
-
-				//for (randnode == nil || randnode2 == nil) || randnode.lNode.String() == randnode2.lNode.String() {
-				//	randnode = swarms[rand.Int31n(int32(len(swarms)))-1]
-				//	randnode2 = swarms[rand.Int31n(int32(len(swarms)))-1]
-				//}
-
-				randnode.RegisterProtocol(exampleProtocol)
-				recv := randnode2.RegisterProtocol(exampleProtocol)
-
-				sendDirectMessage(t, randnode, randnode2.lNode.PublicKey().String(), recv, true)
-			}
-			time.Sleep(1 * time.Second)
+			swarms := testBootstrapping(t, bootnodes[i], nodes[i], rcon[i])
+			assert.Equal(t, len(swarms), nodes)
 		})
 	}
+}
+
+func TestBootstrapAndMessages(t *testing.T) {
+
+	bootnodes := []int{1}
+	nodes := []int{10}
+	rcon := []int{3}
+
+	rand.Seed(time.Now().UnixNano())
+
+	for i := 0; i < len(nodes); i++ {
+		t.Run(fmt.Sprintf("Peers:%v/randconn:%v", nodes[i], rcon[i]), func(t *testing.T) {
+			swarms := testBootstrapping(t, bootnodes[i], nodes[i], rcon[i])
+			if assert.Equal(t, len(swarms), nodes[i]) {
+				log.Info("All nodes bootstrapped ")
+				rand.Seed(time.Now().UnixNano())
+				for z := 0; z < 10; z++ {
+
+					randnode := swarms[rand.Int31n(int32(len(swarms)-1))]
+					randnode2 := swarms[rand.Int31n(int32(len(swarms)-1))]
+
+					for (randnode == nil || randnode2 == nil) || randnode.lNode.String() == randnode2.lNode.String() {
+						randnode = swarms[rand.Int31n(int32(len(swarms)-1))]
+						randnode2 = swarms[rand.Int31n(int32(len(swarms)-1))]
+					}
+
+					randnode.RegisterProtocol(exampleProtocol)
+					recv := randnode2.RegisterProtocol(exampleProtocol)
+
+					sendDirectMessage(t, randnode, randnode2.lNode.PublicKey().String(), recv, true)
+				}
+			}
+		})
+	}
+
 }

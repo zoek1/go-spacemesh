@@ -3,6 +3,7 @@ package connectionpool
 import (
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/net"
+	"math"
 
 	"bytes"
 	"errors"
@@ -28,8 +29,11 @@ type networker interface {
 // - Local connections that were created by local node (by calling GetConnection)
 // - Remote connections that were provided by a networker impl. in a pub-sub manner
 type ConnectionPool struct {
-	localPub    crypto.PublicKey
-	net         networker
+	localPub crypto.PublicKey
+	net      networker
+
+	closing chan string
+
 	connections map[string]net.Connection
 	connMutex   sync.RWMutex
 	pending     map[string][]chan dialResult
@@ -46,6 +50,7 @@ func NewConnectionPool(network networker, lPub crypto.PublicKey) *ConnectionPool
 	cPool := &ConnectionPool{
 		localPub:      lPub,
 		net:           network,
+		closing:       make(chan string, math.MaxInt16),
 		connections:   make(map[string]net.Connection),
 		connMutex:     sync.RWMutex{},
 		pending:       make(map[string][]chan dialResult),
@@ -217,6 +222,12 @@ func (cp *ConnectionPool) TryExistingConnection(remotePub crypto.PublicKey) (net
 	return nil, errors.New("Connection doesn't exist")
 }
 
+// returns a stream of connections that are closing
+// TODO extend to pubsub if htere's mroe than one sub
+func (s *ConnectionPool) ClosingConnections() chan string {
+	return s.closing
+}
+
 func (cp *ConnectionPool) beginEventProcessing() {
 Loop:
 	for {
@@ -226,7 +237,7 @@ Loop:
 
 		case conn := <-cp.net.ClosingConnections():
 			cp.handleClosedConnection(conn)
-
+			cp.closing <- conn.RemotePublicKey().String()
 		case <-cp.teardown:
 			break Loop
 		}

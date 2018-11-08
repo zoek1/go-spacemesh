@@ -22,6 +22,11 @@ message InMessage {
     bytes payload =3;
 }
 
+message BroadcastMessage {
+    string protocolName = 1;
+    bytes payload = 2;
+}
+
 service SpaceMeshService {
     rpc Echo(SimpleMessage) returns (SimpleMessage) {
         option (google.api.http) = {
@@ -45,7 +50,7 @@ service SpaceMeshService {
         };
     }
 
-    rpc Broadcast(InMessage) returns (SimpleMessage){
+    rpc Broadcast(BroadcastMessage) returns (SimpleMessage){
         option (google.api.http) = {
           post: "/v1/broadcast"
           body: "*"

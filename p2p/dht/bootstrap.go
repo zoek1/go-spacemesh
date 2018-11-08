@@ -35,8 +35,10 @@ var (
 func (d *KadDHT) Bootstrap() error {
 	d.local.Debug("Starting node bootstrap ", d.local.String())
 
+	alpha := d.config.RoutingTableAlpha
 	c := d.config.RandomConnections
-	if c <= 0 {
+
+	if c <= 0 || alpha <= 0 {
 		return ErrZeroConnections
 	}
 	// register bootstrap nodes
@@ -58,9 +60,11 @@ func (d *KadDHT) Bootstrap() error {
 
 	d.local.Debug("lookup using %d preloaded bootnodes ", bn)
 
+	// our first query is to a random id we create
 	timeout := time.NewTimer(BootstrapTimeout)
 	i := 0
-	searchFor := d.local.PublicKey().String() //me
+	randompeer, _ := crypto.GetRandomBytes(32)
+	searchFor := base58.Encode(randompeer)
 	// TODO: Issue a healthcheck / refresh loop every x interval.
 BOOTLOOP:
 	for {
@@ -85,30 +89,26 @@ BOOTLOOP:
 			req := make(chan int)
 			d.rt.Size(req)
 			size := <-req
-			if size >= c { // Don't count bootstrap nodes
+			if size >= c { // We got enough nodes no need to continue
 				break BOOTLOOP
 			}
+
+			// we get here when last lookup could' nt find `c` nodes in the network
 			d.local.Warning("%d lookup didn't bootstrap the routing table", i)
 			d.local.Warning("RT now has %d peers", size)
-
-			if size > bn {
-				d.local.Warning("Looking up ourselves didn't fill routing table, trying random address")
-				randompeer, err := crypto.GetRandomBytes(32)
-				if err == nil {
-					searchFor = base58.Encode(randompeer)
-				}
-			}
+			// try another peer
+			randompeer, _ := crypto.GetRandomBytes(32)
+			searchFor = base58.Encode(randompeer)
 			time.Sleep(LookupIntervals)
 		}
 	}
-	// if we finished looking up ourselves extend the search with another random ID
+	// lookup ourselves to make peers know us
 	go func() {
-		randompeer, _ := crypto.GetRandomBytes(32)
-		_, err := d.Lookup(base58.Encode(randompeer))
+		_, err := d.Lookup(d.local.PublicKey().String())
 		d.reschan <- err
 	}()
 
-	timeout.Reset(BootstrapTimeout / 2)
+	timeout.Reset(BootstrapTimeout)
 
 	select {
 	case <-timeout.C:
@@ -131,35 +131,4 @@ BOOTLOOP:
 
 func (d *KadDHT) Close() {
 	close(d.reschan)
-}
-
-func (d *KadDHT) healthLoop() {
-	tick := time.NewTicker(RefreshInterval)
-	for range tick.C {
-		err := d.refresh()
-		if err != nil {
-			d.local.Error("DHT Refresh failed, trying again")
-		}
-	}
-}
-
-func (d *KadDHT) refresh() error {
-	reschan := make(chan error)
-
-	go func() {
-		_, err := d.Lookup(d.local.PublicKey().String())
-		reschan <- err
-	}()
-
-	select {
-	case err := <-reschan:
-		if err == nil {
-			return ErrFoundOurself
-		}
-		// should be - ErrLookupFailed
-		// We want to have lookup failed error
-		// no one should return us ourselves.
-	}
-
-	return nil
 }

@@ -15,7 +15,7 @@ node-id = ""
 new-node= false # will try to load from file if this is false
 dial-timeout = "1m"
 conn-keepalive = "48h"
-network-id = 1 # 0 - MainNet, 1 - TestNet
+network-id = 0 # 0 - MainNet, 1 - TestNet
 response-timeout = "2s"
 
 # Node Swarm Config
@@ -25,7 +25,7 @@ bootstrap = false # turn this on for non-bootstrap nodes
 bucketsize = 20 # Routing table bucket size. recommended higher for bootstrap node
 rtalpha = 4 # Routing table alpha
 randcon = 5 # Number of random connections (neighbors for gossip). increase on bigger networks decrease for small
-bootnodes = ["0.0.0.0:1234/j7qWfWaJRVp25ZsnCu9rJ4PmhigZBtesB4YmQHqqPvtR"] # this is an example
+bootnodes = [] # this is an example
 
 # API Config
 [api]

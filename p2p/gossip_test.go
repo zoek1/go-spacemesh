@@ -8,6 +8,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"github.com/stretchr/testify/assert"
+	"math/rand"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestSwarm_EveryNodeIsInSelected(t *testing.T) {
 		protoC chan service.Message
 	}
 
-	numPeers, connections := 10, 3
+	numPeers, connections := 30, 8
 
 	nodes := make([]*swarm, numPeers)
 	chans := make([]chan service.Message, numPeers)
@@ -62,7 +63,7 @@ func TestSwarm_EveryNodeIsInSelected(t *testing.T) {
 	for n := range nchan {
 		nodes[i] = n.s
 		chans[i] = n.protoC
-		selected[i] = n.s.dht.SelectPeers(5)
+		selected[i] = n.s.dht.SelectPeers(connections)
 		i++
 		if i >= numPeers {
 			close(nchan)
@@ -193,6 +194,110 @@ func TestSwarm_GossipRoundTrip(t *testing.T) {
 	}
 	bn.lNode.Info("didnt get : %v", didnt)
 	time.Sleep(time.Millisecond * 1000) // to see the log
+}
+
+func TestSwarm_EveroneRecvMessage(t *testing.T) {
+	type sp struct {
+		s      *swarm
+		protoC chan service.Message
+	}
+
+	numPeers, connections := 10, 3
+
+	nodes := make([]*swarm, numPeers)
+	chans := make([]chan service.Message, numPeers)
+	nchan := make(chan *sp, numPeers)
+	//selected := make([][]node.Node, numPeers)
+
+	cfg := config.DefaultConfig()
+	cfg.SwarmConfig.RandomConnections = connections
+	cfg.SwarmConfig.Gossip = false
+	cfg.SwarmConfig.Bootstrap = false
+	cfg.SwarmConfig.RoutingTableBucketSize = 100
+	bn := p2pTestInstance(t, cfg)
+	// TODO: write protocol matching. so we won't crash connections because bad protocol messages.
+	// if we're after protocol matching then we can crash the connection since its probably malicious
+	bn.RegisterProtocol("gossip") // or else it will crash connections
+
+	err := bn.Start()
+	assert.NoError(t, err, "Bootnode didnt work")
+	bn.lNode.Info("Bootnode : ", bn.lNode.String())
+	cfg2 := config.DefaultConfig()
+	cfg2.SwarmConfig.RandomConnections = connections
+	cfg2.SwarmConfig.Bootstrap = true
+	cfg2.SwarmConfig.Gossip = true
+	cfg2.SwarmConfig.BootstrapNodes = []string{node.StringFromNode(bn.lNode.Node)}
+	for i := 0; i < numPeers; i++ {
+		go func() {
+			nod := p2pTestInstance(t, cfg2)
+			if nod == nil {
+				t.Error("ITS NIL WTF")
+			}
+			nodchan := nod.RegisterProtocol("gossip") // this is example
+			err := nod.Start()
+			assert.NoError(t, err)
+			assert.NoError(t, nod.waitForBoot())
+			assert.NoError(t, nod.waitForGossip())
+			nchan <- &sp{nod, nodchan}
+		}()
+	}
+
+	i := 0
+	for n := range nchan {
+		nodes[i] = n.s
+		chans[i] = n.protoC
+		i++
+		if i >= numPeers {
+			close(nchan)
+		}
+	}
+
+	//	var passed []string
+	//	bn.lNode.Info("ALL Peers bootstrapped")
+	//NL:
+	//	for n := range nodes { // iterate nodes
+	//		id := nodes[n].lNode.String()
+	//		for j := range selected { // iterate all selected set
+	//			if n == j {
+	//				continue
+	//			}
+	//
+	//			for s := range selected[j] {
+	//				if selected[j][s].String() == id {
+	//					passed = append(passed, id)
+	//					continue NL
+	//				}
+	//			}
+	//		}
+	//	}
+
+	//this is commented since sometimes not all we're selelcted but the node they selected added them aswell //assert.Equal(t, len(passed), numPeers)
+
+	payload := []byte(RandString(10))
+	randnode := nodes[rand.Int31n(int32(len(nodes)-1))]
+	randnode.Broadcast("gossip", payload)
+
+	got := 0
+
+	for m := range nodes {
+		if nodes[m].lNode.String() == randnode.lNode.String() {
+			continue // skip ourselves
+		}
+		tmr := time.NewTimer(time.Second * 15) // estimated gossip timeout
+		select {
+		case msg := <-chans[m]:
+			fmt.Println("got message", msg)
+			got++
+			//assert.Equal(t, msg.Data(), payload)
+		case <-tmr.C:
+			break
+		}
+	}
+
+	assert.Equal(t, got, len(nodes)-1) // minus the one we used to send
+
+	time.Sleep(1 * time.Second)
+
 }
 
 func TestSwarm_GossipRoundTrip2(t *testing.T) {

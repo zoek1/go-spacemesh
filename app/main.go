@@ -267,7 +267,7 @@ func (app *SpacemeshApp) startSpacemesh(cmd *cobra.Command, args []string) {
 	app.P2P = swarm
 	app.NodeInitCallback <- true
 
-	apiConf := app.Config.API
+	apiConf := &app.Config.API
 
 	// todo: if there's no loaded account - do the new account interactive flow here
 
@@ -282,15 +282,15 @@ func (app *SpacemeshApp) startSpacemesh(cmd *cobra.Command, args []string) {
 	log.Info("start api servers")
 	if apiConf.StartGrpcServer || apiConf.StartJSONServer {
 		// start grpc if specified or if json rpc specified
-		app.grpcAPIService = api.NewGrpcService(&apiConf, app.P2P)
+		app.grpcAPIService = api.NewGrpcService(apiConf, app.P2P)
 		app.grpcAPIService.StartService(nil)
-		log.Info("Started GRPC service on %v", apiConf.GrpcServerPort)
+		log.Info("Started GRPC")
 	}
 
 	if apiConf.StartJSONServer {
-		app.jsonAPIService = api.NewJSONHTTPServer(&apiConf)
+		app.jsonAPIService = api.NewJSONHTTPServer(apiConf)
 		app.jsonAPIService.StartService(nil)
-		log.Info("Started JSON service on %v", apiConf.JSONServerPort)
+		log.Info("Started JSON service")
 	}
 
 	log.Info("App started.")

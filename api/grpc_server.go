@@ -24,12 +24,12 @@ type SpaceMeshGrpcService struct {
 }
 
 // Echo returns the response for an echo api request
-func (s SpaceMeshGrpcService) Echo(ctx context.Context, in *pb.SimpleMessage) (*pb.SimpleMessage, error) {
+func (s *SpaceMeshGrpcService) Echo(ctx context.Context, in *pb.SimpleMessage) (*pb.SimpleMessage, error) {
 	return &pb.SimpleMessage{Value: in.Value}, nil
 }
 
 // Echo returns the response for an echo api request
-func (s SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Protocol) (*pb.SimpleMessage, error) {
+func (s *SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Protocol) (*pb.SimpleMessage, error) {
 	cn := s.app.RegisterProtocol(in.Name)
 	destinationAddress, err := net.ResolveUDPAddr("udp4", "127.0.0.1:"+strconv.Itoa(int(in.Port)))
 	if err != nil {
@@ -68,7 +68,7 @@ func (s SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Proto
 }
 
 // Echo returns the response for an echo api request
-func (s SpaceMeshGrpcService) SendMessage(ctx context.Context, in *pb.InMessage) (*pb.SimpleMessage, error) {
+func (s *SpaceMeshGrpcService) SendMessage(ctx context.Context, in *pb.InMessage) (*pb.SimpleMessage, error) {
 	err := s.app.SendMessage(in.NodeID, in.ProtocolName, in.Payload)
 	if err != nil {
 		return nil, err
@@ -77,9 +77,13 @@ func (s SpaceMeshGrpcService) SendMessage(ctx context.Context, in *pb.InMessage)
 }
 
 // Echo returns the response for an echo api request
-func (s SpaceMeshGrpcService) Broadcast(ctx context.Context, in *pb.BroadcastMessage) (*pb.SimpleMessage, error) {
+func (s *SpaceMeshGrpcService) Broadcast(ctx context.Context, in *pb.BroadcastMessage) (*pb.SimpleMessage, error) {
+	log.Info("GRPC broadcast called")
 	err := s.app.Broadcast(in.ProtocolName, in.Payload)
+	log.Info("GRPC broadcast finished")
+
 	if err != nil {
+		log.Info("GRPC error")
 		log.Error("Error trying to broadcast err:", err)
 		return nil, err
 	}
@@ -87,7 +91,7 @@ func (s SpaceMeshGrpcService) Broadcast(ctx context.Context, in *pb.BroadcastMes
 }
 
 // StopService stops the grpc service.
-func (s SpaceMeshGrpcService) StopService() {
+func (s *SpaceMeshGrpcService) StopService() {
 	log.Debug("Stopping grpc service...")
 	s.Server.Stop()
 	log.Debug("grpc service stopped...")
@@ -95,20 +99,21 @@ func (s SpaceMeshGrpcService) StopService() {
 }
 
 // NewGrpcService create a new grpc service using config data.
-func NewGrpcService(config *config.Config, app p2p.Service) *SpaceMeshGrpcService {
+func NewGrpcService(config  *config.Config, app p2p.Service) *SpaceMeshGrpcService {
 	port := config.GrpcServerPort
 	server := grpc.NewServer()
 	return &SpaceMeshGrpcService{Server: server, Port: uint(port), app: app}
 }
 
 // StartService starts the grpc service.
-func (s SpaceMeshGrpcService) StartService(status chan bool) {
+func (s *SpaceMeshGrpcService) StartService(status chan bool) {
 	go s.startServiceInternal(status)
 }
 
 // This is a blocking method designed to be called using a go routine
-func (s SpaceMeshGrpcService) startServiceInternal(status chan bool) {
-	addr := ":" + strconv.Itoa(int(s.Port))
+func (s *SpaceMeshGrpcService) startServiceInternal(status chan bool) {
+	port := s.Port
+	addr := ":" + strconv.Itoa(int(port))
 
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -121,7 +126,7 @@ func (s SpaceMeshGrpcService) startServiceInternal(status chan bool) {
 	// SubscribeOnNewConnections reflection service on gRPC server
 	reflection.Register(s.Server)
 
-	log.Debug("grpc API listening on port %d", s.Port)
+	log.Debug("grpc API listening on port %d", port)
 
 	if status != nil {
 		status <- true

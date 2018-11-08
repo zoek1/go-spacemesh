@@ -196,11 +196,12 @@ func (s *Neighborhood) Broadcast(msg []byte) error {
 	if _, ok := s.oldMessageQ[string(msg)]; ok {
 		// todo : - have some more metrics for termination
 		// todo	: - maybe tell the peer weg ot this message already?
+		s.oldMessageMu.RUnlock() // or its deadlock
 		return errors.New("old message")
 	}
 	s.oldMessageMu.RUnlock()
 
-	if len(s.outbound) == 0 {
+	if len(s.outbound) + len(s.inbound) == 0 {
 		return errors.New("you have no outbound to broadcast to")
 	}
 
@@ -254,6 +255,7 @@ func (s *Neighborhood) getMorePeers(numpeers int) {
 	s.Debug("getMorePeers %d", numpeers)
 	s.peersMutex.RLock()
 	if len(s.outbound) == s.config.RandomConnections {
+		s.peersMutex.RUnlock()
 		return
 	}
 	s.peersMutex.RUnlock()
@@ -293,39 +295,45 @@ func (s *Neighborhood) getMorePeers(numpeers int) {
 	}
 
 	i, j := 0, 0
-	for cne := range res {
-		i++ // We count i everytime to know when to close the channel
+	tm := time.NewTimer(time.Second * 20 * time.Duration(ndsLen))
+	loop:
+	for {
+		select {
+		case cne := <-res:
+			i++ // We count i everytime to know when to close the channel
 
-		if cne.err != nil {
-			s.Error("can't establish connection with sampled peer %v, %v", cne.n.String(), cne.err)
-			j++
-			continue // this peer didn't work, todo: tell dht
+			if cne.err != nil && cne.n == node.EmptyNode {
+				s.Error("can't establish connection with sampled peer %v, %v", cne.n.String(), cne.err)
+				j++
+				continue // this peer didn't work, todo: tell dht
+			}
+
+			p := makePeer(cne.n, cne.c, s.Log)
+			s.peersMutex.Lock()
+			//_, ok := s.outbound[cne.n.String()]
+			_, ok2 := s.inbound[cne.n.String()]
+			if ok2 {
+				delete(s.inbound, cne.n.String())
+			}
+			//
+			//if ok {
+			//	s.outbound[cne.n.String()] = p
+			//} else if ok2 {
+			//	s.outbound[cne.n.String()] = p
+			//}
+
+			s.outbound[cne.n.String()] = p
+
+			s.peersMutex.Unlock()
+			go p.start(s.remove)
+			s.Debug("Neighborhood: Added peer to peer list %v", cne.n.Pretty())
+
+			if i == numpeers {
+				break loop
+			}
+		case <-tm.C:
+			break loop
 		}
-
-		p := makePeer(cne.n, cne.c, s.Log)
-		s.peersMutex.Lock()
-		//_, ok := s.outbound[cne.n.String()]
-		_, ok2 := s.inbound[cne.n.String()]
-		if ok2 {
-			delete(s.inbound, cne.n.String())
-		}
-		//
-		//if ok {
-		//	s.outbound[cne.n.String()] = p
-		//} else if ok2 {
-		//	s.outbound[cne.n.String()] = p
-		//}
-
-		s.outbound[cne.n.String()] = p
-
-		s.peersMutex.Unlock()
-		go p.start(s.remove)
-		s.Debug("Neighborhood: Added peer to peer list %v", cne.n.Pretty())
-
-		if i == numpeers {
-			close(res)
-		}
-
 	}
 
 	if len(s.outbound) < s.config.RandomConnections {

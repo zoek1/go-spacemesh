@@ -16,6 +16,7 @@ import (
 // JSONHTTPServer is a JSON http server providing the Spacemesh API.
 // It is implemented using a grpc-gateway. See https://github.com/grpc-ecosystem/grpc-gateway .
 type JSONHTTPServer struct {
+	grpcPort uint
 	Port   uint
 	server *http.Server
 	ctx    context.Context
@@ -24,17 +25,17 @@ type JSONHTTPServer struct {
 
 // NewJSONHTTPServer creates a new json http server.
 func NewJSONHTTPServer(config *config.Config) *JSONHTTPServer {
-	return &JSONHTTPServer{Port: uint(config.JSONServerPort), stop: make(chan bool)}
+	return &JSONHTTPServer{grpcPort: uint(config.GrpcServerPort), Port: uint(config.JSONServerPort), stop: make(chan bool)}
 }
 
 // StopService stops the server.
-func (s JSONHTTPServer) StopService() {
+func (s *JSONHTTPServer) StopService() {
 	log.Debug("Stopping json-http service...")
 	s.stop <- true
 }
 
 // Listens on gracefully stopping the server in the same routine.
-func (s JSONHTTPServer) listenStop() {
+func (s *JSONHTTPServer) listenStop() {
 	<-s.stop
 	log.Debug("Shutting down json API server...")
 	if err := s.server.Shutdown(s.ctx); err != nil {
@@ -43,11 +44,11 @@ func (s JSONHTTPServer) listenStop() {
 }
 
 // StartService starts the json api server and listens for status (started, stopped).
-func (s JSONHTTPServer) StartService(status chan bool) {
+func (s *JSONHTTPServer) StartService(status chan bool) {
 	go s.startInternal(status)
 }
 
-func (s JSONHTTPServer) startInternal(status chan bool) {
+func (s *JSONHTTPServer) startInternal(status chan bool) {
 	ctx := context.Background()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -57,7 +58,7 @@ func (s JSONHTTPServer) startInternal(status chan bool) {
 	opts := []grpc.DialOption{grpc.WithInsecure()}
 
 	// register the http server on the local grpc server
-	portStr := strconv.Itoa(int(s.Port))
+	portStr := strconv.Itoa(int(s.grpcPort))
 	echoEndpoint := flag.String("api_endpoint", "localhost:"+portStr, "endpoint of api grpc service")
 
 	if err := gw.RegisterSpaceMeshServiceHandlerFromEndpoint(ctx, mux, *echoEndpoint, opts); err != nil {

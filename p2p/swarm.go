@@ -521,7 +521,7 @@ func (s *swarm) Broadcast(protocol string, payload []byte) error {
 	if err != nil {
 		return err
 	}
-
+	s.lNode.Info("Message is okay so passing to broadcast")
 	return s.gossip.Broadcast(msg)
 }
 

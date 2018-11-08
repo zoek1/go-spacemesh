@@ -90,15 +90,13 @@ func (d *KadDHT) internalLookup(pubkey string) ([]node.Node, error) {
 // Lookup finds a node in the dht by its public key, it issues a search inside the local routing table,
 // if the node can't be found there it sends a query to the network.
 func (d *KadDHT) Lookup(pubkey string) (node.Node, error) {
-	dhtid := node.NewDhtIDFromBase58(pubkey)
-	poc := make(PeersOpChannel)
-	d.rt.NearestPeers(NearestPeersReq{dhtid, d.config.RoutingTableAlpha, poc})
-	res := (<-poc).Peers
-	if len(res) == 0 {
-		return node.EmptyNode, ErrEmptyRoutingTable
+	res, err := d.internalLookup(pubkey)
+
+	if err != nil {
+		return node.EmptyNode, err
 	}
 
-	if res[0].DhtID().Equals(dhtid) {
+	if res[0].String() == pubkey {
 		return res[0], nil
 	}
 

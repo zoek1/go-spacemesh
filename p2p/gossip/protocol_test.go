@@ -10,11 +10,11 @@ import (
 )
 
 func TestNeighborhood_Peer(t *testing.T) {
-	n := &Neighborhood{peers: make(map[string]*peer, 10)}
+	n := &Neighborhood{outbound: make(map[string]*peer, 10)}
 	ni := node.GenerateRandomNodeData()
 	cn := &net.ConnectionMock{}
 	cn.SetRemotePublicKey(ni.PublicKey())
-	n.peers[ni.String()] = makePeer(ni, cn, log.New("test", "", ""))
+	n.outbound[ni.String()] = makePeer(ni, cn, log.New("test", "", ""))
 	np, c := n.Peer(ni.String())
 	assert.Equal(t, ni, np)
 	assert.Equal(t, cn, c)

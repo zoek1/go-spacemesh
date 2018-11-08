@@ -97,8 +97,8 @@ BOOTLOOP:
 			d.local.Warning("%d lookup didn't bootstrap the routing table", i)
 			d.local.Warning("RT now has %d peers", size)
 			// try another peer
-			//randompeer, _ := crypto.GetRandomBytes(32)
-			//searchFor := base58.Encode(randompeer)
+			randompeer, _ := crypto.GetRandomBytes(32)
+			searchFor = base58.Encode(randompeer)
 			time.Sleep(LookupIntervals)
 		}
 	}

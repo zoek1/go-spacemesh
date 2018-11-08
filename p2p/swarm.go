@@ -188,22 +188,45 @@ func (s *swarm) connectionPool() *connectionpool.ConnectionPool {
 // req.destId: receiver remote node public key/id
 // Local request to send a message to a remote node
 func (s *swarm) SendMessage(peerPubKey string, protocol string, payload []byte) error {
+	if peerPubKey == s.lNode.PublicKey().String() {
+		return errors.New("you can't send a message to yourself")
+	}
+
 	s.lNode.Info("Sending message to %v", peerPubKey)
 	var err error
 	var peer node.Node
 	var conn net.Connection
 
-	peer, conn = s.gossip.Peer(peerPubKey) // check if he's a neighbor
-	if peer == node.EmptyNode {
-		peer, err = s.dht.Lookup(peerPubKey) // blocking, might issue a network lookup that'll take time.
+	if s.config.SwarmConfig.Gossip {
+		// we don't want to query gossip before
+		select {
+		case <-s.gossipC:
+			peer, conn = s.gossip.Peer(peerPubKey)
+		default:
+		}
+	}
 
+	if peer == node.EmptyNode {
+		//check if we're connected before issuing a lookup
+		pubkey, err := crypto.NewPublicKeyFromString(peerPubKey)
 		if err != nil {
 			return err
 		}
-		conn, err = s.cPool.GetConnection(peer.Address(), peer.PublicKey()) // blocking, might take some time in case there is no connection
-		if err != nil {
-			s.lNode.Warning("failed to send message to %v, no valid connection. err: %v", peer.String(), err)
-			return err
+
+		conn, err = s.cPool.TryExistingConnection(pubkey)
+		if err != nil { // there was no existing connection
+			peer, err = s.dht.Lookup(peerPubKey) // blocking, might issue a network lookup that'll take time.
+
+			if err != nil {
+				return err
+			}
+			conn, err = s.cPool.GetConnection(peer.Address(), peer.PublicKey()) // blocking, might take some time in case there is no connection
+			if err != nil {
+				s.lNode.Warning("failed to send message to %v, no valid connection. err: %v", peer.String(), err)
+				return err
+			}
+		} else {
+			peer = node.New(pubkey, "")
 		}
 	}
 
@@ -323,9 +346,12 @@ func (s *swarm) listenToNetworkMessages() {
 
 func (s *swarm) handleNewConnectionEvents() {
 	newConnEvents := s.network.SubscribeOnNewRemoteConnections()
+	clsing := s.connectionPool().ClosingConnections()
 Loop:
 	for {
 		select {
+		case cls := <-clsing:
+			go s.gossip.Disconnect(cls)
 		case nce := <-newConnEvents:
 			go func(newcon net.NewConnectionEvent) { s.dht.Update(nce.Node); s.gossip.RegisterPeer(nce.Node, nce.Conn) }(nce)
 		case <-s.shutdown:

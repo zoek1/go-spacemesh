@@ -482,6 +482,9 @@ func (s *swarm) onRemoteClientMessage(msg net.IncomingMessageEvent) error {
 	}
 
 	if err != nil && err.Error() == "old message" { //hotfix: fix with proper error classification
+		if err.Error() != "old message" {
+			s.LocalNode().Error("Error broadcasting", err)
+		}
 		return nil // finish here, this is an old message no need to process.
 	}
 

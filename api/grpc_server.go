@@ -69,8 +69,10 @@ func (s *SpaceMeshGrpcService) RegisterProtocol(ctx context.Context, in *pb.Prot
 
 // Echo returns the response for an echo api request
 func (s *SpaceMeshGrpcService) SendMessage(ctx context.Context, in *pb.InMessage) (*pb.SimpleMessage, error) {
+	log.Info("RPC Call to SendMessage (%v) >> (%v)", in.NodeID, in.Payload )
 	err := s.app.SendMessage(in.NodeID, in.ProtocolName, in.Payload)
 	if err != nil {
+		log.Error("Error sending message %v", err)
 		return nil, err
 	}
 	return &pb.SimpleMessage{Value: "ok"}, nil

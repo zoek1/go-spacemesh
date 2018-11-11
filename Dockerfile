@@ -1,5 +1,5 @@
 FROM golang:1.9.2-alpine3.6 AS build
-ARG BRANCH=master
+ARG BRANCH=hackathon
 RUN apk add --no-cache make git
 
 RUN go get -u github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway

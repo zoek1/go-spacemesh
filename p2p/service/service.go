@@ -14,12 +14,16 @@ type Message interface {
 // Service is an interface that represents a networking service (ideally p2p) that we can use to send messages or listen to incoming messages
 type Service interface {
 	Start() error
+	Shutdown()
+
 	RegisterProtocol(protocol string) chan Message
 	SendMessage(nodeID string, protocol string, payload []byte) error
+	Broadcast(protocol string, payload []byte) error
+
 	SubscribePeerEvents() (new chan crypto.PublicKey, del chan crypto.PublicKey)
 	ProcessProtocolMessage(sender node.Node, protocol string, payload Data) error
-	Broadcast(protocol string, payload []byte) error
-	Shutdown()
+
+	Disconnect(key crypto.PublicKey)
 }
 
 type Data interface {

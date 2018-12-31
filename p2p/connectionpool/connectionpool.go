@@ -149,6 +149,15 @@ func (cp *ConnectionPool) handleNewConnection(rPub crypto.PublicKey, newConn net
 	cp.handleDialResult(rPub, res)
 }
 
+func (cp *ConnectionPool) Disconnect(rPub crypto.PublicKey) {
+	cp.connMutex.Lock()
+	c, ok := cp.connections[rPub.String()]
+	cp.connMutex.Unlock()
+	if ok {
+		c.Close()
+	}
+}
+
 func (cp *ConnectionPool) handleClosedConnection(conn net.Connection) {
 	cp.net.Logger().Debug("connection %v with %v was closed (sessionID: %v)", conn.String(), conn.RemotePublicKey().Pretty(), conn.Session().ID())
 	cp.connMutex.Lock()

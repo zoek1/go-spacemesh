@@ -36,6 +36,10 @@ func (cp *cpoolMock) RemoteConnectionsChannel() chan net.NewConnectionEvent {
 	return make(chan net.NewConnectionEvent)
 }
 
+func (cp *cpoolMock) Disconnect(key crypto.PublicKey) {
+	return
+}
+
 func p2pTestInstance(t testing.TB, config config.Config) *swarm {
 	port, err := node.GetUnboundedPort()
 	assert.NoError(t, err, "Error getting a port", err)

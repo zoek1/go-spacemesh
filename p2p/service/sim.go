@@ -198,6 +198,10 @@ func (sn *Node) RegisterProtocol(protocol string) chan Message {
 	return c
 }
 
+func (sn *Node) Disconnect(key crypto.PublicKey) {
+	// todo
+}
+
 // AttachDHT attaches a dht for the update function of the simulation node
 func (sn *Node) AttachDHT(dht dht) {
 	sn.dht = dht

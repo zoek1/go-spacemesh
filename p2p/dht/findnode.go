@@ -146,6 +146,8 @@ func (p *findNodeProtocol) FindNode(serverNode node.Node, target string) ([]node
 		err = errors.New("findnode took too long to respond")
 	}
 
+	p.service.Disconnect(serverNode.PublicKey())
+
 	return nil, err
 }
 
@@ -217,6 +219,8 @@ func (p *findNodeProtocol) handleIncomingRequest(sender crypto.PublicKey, reqID,
 	if err != nil {
 		p.log.Error("failed sending response message to %v, err:%v", sender.String(), err)
 	}
+
+	p.service.Disconnect(sender)
 }
 
 // Handle an incoming pong message from a remote node

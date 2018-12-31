@@ -25,7 +25,7 @@ type DHT interface {
 }
 
 // LookupTimeout is the timelimit we give to a single lookup operation
-const LookupTimeout = 15 * time.Second
+const LookupTimeout = 1 * time.Second
 
 var (
 	// ErrLookupFailed determines that we could'nt find this node in the routing table or network

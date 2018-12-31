@@ -48,6 +48,7 @@ func (pm protocolMessage) Bytes() []byte {
 type cPool interface {
 	GetConnection(address string, pk crypto.PublicKey) (net.Connection, error)
 	RemoteConnectionsChannel() chan net.NewConnectionEvent
+	Disconnect(key crypto.PublicKey)
 }
 
 type swarm struct {
@@ -719,6 +720,11 @@ loop:
 			}
 
 			s.outpeersMutex.Lock()
+			if _, ok := s.outpeers[cne.n.PublicKey().String()]; ok {
+				s.lNode.Debug("Neighborhood: peer %v is already an outbound peer", cne.n.Pretty())
+				s.outpeersMutex.Unlock()
+				continue
+			}
 			s.outpeers[cne.n.PublicKey().String()] = cne.n.PublicKey()
 			s.outpeersMutex.Unlock()
 
@@ -740,12 +746,14 @@ loop:
 
 // Disconnect removes a peer from the neighborhood, it requests more peers if our outbound peer count is less than configured
 func (s *swarm) Disconnect(key crypto.PublicKey) {
+	s.lNode.Debug("Disconnecting from %v", key.Pretty())
 	peer := key.String()
 
 	s.inpeersMutex.Lock()
 	if _, ok := s.inpeers[peer]; ok {
 		delete(s.inpeers, peer)
 		s.inpeersMutex.Unlock()
+		s.cPool.Disconnect(key)
 		s.publishDelPeer(key)
 		return
 	}

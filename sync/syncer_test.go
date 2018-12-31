@@ -332,10 +332,10 @@ func Test_SyncIntegrationSuite(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
 	}
-	sis := new(SyncIntegrationSuite)
-	sis.BootstrappedNodeCount = 2
-	sis.NeighborsCount = 2
+	sis := &SyncIntegrationSuite{}
+	sis.BootstrappedNodeCount = 1
 	sis.BootstrapNodesCount = 1
+	sis.NeighborsCount = 1
 	sis.name = t.Name()
 	i := 1
 	sis.BeforeHook = func(idx int, s p2p.NodeTestInstance) {
@@ -344,15 +344,7 @@ func Test_SyncIntegrationSuite(t *testing.T) {
 		sis.syncers = append(sis.syncers, sync)
 		i++
 	}
-
 	suite.Run(t, sis)
-}
-
-func (sis *SyncIntegrationSuite) SetupTest() {
-	fmt.Println("########################## SEtting up test")
-	for _, a := range sis.syncers {
-		a.Mesh = getMesh(fmt.Sprintf("%s_%s", sis.name, time.Now()))
-	}
 }
 
 func (sis *SyncIntegrationSuite) TestSyncProtocol_TwoNodes() {
@@ -372,8 +364,6 @@ func (sis *SyncIntegrationSuite) TestSyncProtocol_TwoNodes() {
 	defer syncObj1.Close()
 	syncObj2 := sis.syncers[1]
 	defer syncObj2.Close()
-	syncObj3 := sis.syncers[2]
-	defer syncObj3.Close()
 	syncObj1.AddLayer(mesh.NewExistingLayer(1, []*mesh.Block{block1, block2}))
 	syncObj1.AddLayer(mesh.NewExistingLayer(2, []*mesh.Block{block3, block4}))
 	syncObj1.AddLayer(mesh.NewExistingLayer(3, []*mesh.Block{block5, block6}))
@@ -382,12 +372,9 @@ func (sis *SyncIntegrationSuite) TestSyncProtocol_TwoNodes() {
 
 	timeout := time.After(60 * time.Second)
 	syncObj2.SetLatestKnownLayer(5)
-	syncObj1.Start()
 	syncObj2.Start()
-	syncObj3.Start()
 
 	// Keep trying until we're timed out or got a result or got an error
-loop:
 	for {
 		select {
 		// Got a timeout! fail with a timeout error
@@ -397,12 +384,12 @@ loop:
 		default:
 			if syncObj2.LatestIrreversible() == 3 {
 				t.Log("done!")
-				break loop
+				return
 			}
 		}
 	}
 }
-//
+
 //func (sis *SyncIntegrationSuite) TestSyncProtocol_MultipleNodes() {
 //	t := sis.T()
 //	t.Skip()

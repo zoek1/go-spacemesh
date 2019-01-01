@@ -35,7 +35,6 @@ type IntegrationTestSuite struct {
 	Instances []*swarm
 }
 
-
 func (its *IntegrationTestSuite) SetupSuite() {
 	boot := make([]*swarm, its.BootstrapNodesCount)
 	swarm := make([]*swarm, its.BootstrappedNodeCount)

@@ -1,13 +1,13 @@
 package sync
 
 import (
-	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"sync/atomic"
 )
 
-type Peer crypto.PublicKey
+type Peer cryptoSign.PublicKey
 
 type Peers interface {
 	GetPeers() []Peer
@@ -36,12 +36,12 @@ func (pi PeersImpl) GetPeers() []Peer {
 	return pi.snapshot.Load().([]Peer)
 }
 
-func (pi *PeersImpl) listenToPeers(newPeerC chan crypto.PublicKey, expiredPeerC chan crypto.PublicKey) {
+func (pi *PeersImpl) listenToPeers(newPeerC chan cryptoSign.PublicKey, expiredPeerC chan cryptoSign.PublicKey) {
 	peerSet := make(map[Peer]bool) //set of uniq peers
 	for {
 		select {
 		case <-pi.exit:
-			log.Debug("run stoped")
+			log.Debug("run stopped")
 			return
 		case peer := <-newPeerC:
 			peerSet[peer] = true

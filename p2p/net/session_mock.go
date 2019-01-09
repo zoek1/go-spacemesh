@@ -1,31 +1,38 @@
 package net
 
-import "sync"
+import (
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoBox"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
+)
 
 // SessionMock is a wonderful fluffy teddybear
 type SessionMock struct {
-	id        []byte
+	id        cryptoSign.PublicKey
 	decResult []byte
 	decError  error
 	encResult []byte
 	encError  error
 
-	pubkey []byte
+	pubkey cryptoBox.Key
 	keyM   []byte
 }
 
+func (sm SessionMock) PeerPubkey() cryptoSign.PublicKey {
+	panic("implement me")
+}
+
+func (sm SessionMock) SetSharedSecret(sharedSecret cryptoBox.Key) {
+	panic("implement me")
+}
+
 func NewSessionMock(ID []byte) *SessionMock {
-	return &SessionMock{id: ID}
+	publicKey, _ := cryptoSign.NewPublicKey(ID)
+	return &SessionMock{id: publicKey}
 }
 
 // ID is this
-func (sm SessionMock) ID() []byte {
+func (sm SessionMock) ID() cryptoSign.PublicKey {
 	return sm.id
-}
-
-// PubKey is this
-func (sm SessionMock) PubKey() []byte {
-	return sm.pubkey
 }
 
 // KeyM is this
@@ -34,47 +41,27 @@ func (sm SessionMock) KeyM() []byte {
 }
 
 // Encrypt is this
-func (sm SessionMock) Encrypt(in []byte) ([]byte, error) {
-	out := in
+func (sm SessionMock) SealMessage(message []byte) []byte {
+	out := message
 	if sm.encResult != nil {
 		out = sm.encResult
 	}
-	return out, sm.encError
+	return out
 }
 
 // Decrypt is this
-func (sm SessionMock) Decrypt(in []byte) ([]byte, error) {
-	out := in
+func (sm SessionMock) OpenMessage(boxedMessage []byte) ([]byte, error) {
+	out := boxedMessage
 	if sm.decResult != nil {
 		out = sm.decResult
 	}
 	return out, sm.decError
 }
 
-// SetPubKey is this
-func (sm *SessionMock) SetPubKey(x []byte) {
-	sm.pubkey = x
-}
-
-// SetKeyM is this
-func (sm *SessionMock) SetKeyM(x []byte) {
-	sm.keyM = x
-}
-
-// SetEncrypt is this
-func (sm *SessionMock) SetEncrypt(res []byte, err error) {
-	sm.encResult = res
-	sm.encError = err
-}
-
 // SetDecrypt is this
 func (sm *SessionMock) SetDecrypt(res []byte, err error) {
 	sm.decResult = res
 	sm.decError = err
-}
-
-func (n SessionMock) EncryptGuard() *sync.Mutex {
-	return nil
 }
 
 var _ NetworkSession = (*SessionMock)(nil)

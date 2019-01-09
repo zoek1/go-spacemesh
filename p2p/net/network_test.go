@@ -2,9 +2,8 @@ package net
 
 import (
 	"fmt"
-	"github.com/gogo/protobuf/proto"
-	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
@@ -13,30 +12,12 @@ import (
 	"time"
 )
 
-func testLogger(id string) log.Log {
-	// empty loggers so no files will be kept
-	return log.New(id, "", "")
-}
-
-type NetMessage struct {
-	data []byte
-	err  error
-}
-
-func (msg NetMessage) Message() []byte {
-	return msg.data
-}
-
-func (msg NetMessage) Error() error {
-	return msg.err
-}
-
-func waitForCallbackOrTimeout(t *testing.T, outchan chan NewConnectionEvent, expectedSession NetworkSession) {
+func waitForCallbackOrTimeout(t *testing.T, outchan chan NewConnectionEvent, expectedPeerPubkey cryptoSign.PublicKey) {
 	select {
 	case res := <-outchan:
-		assert.Equal(t, expectedSession.ID(), res.Conn.Session().ID(), "wrong session received")
+		assert.Equal(t, expectedPeerPubkey, res.Conn.Session().PeerPubkey(), "wrong session received")
 	case <-time.After(2 * time.Second):
-		assert.Nil(t, expectedSession, "Didn't get channel notification")
+		assert.Nil(t, expectedPeerPubkey, "Didn't get channel notification")
 	}
 }
 
@@ -83,14 +64,13 @@ func TestHandlePreSessionIncomingMessage(t *testing.T) {
 	con.addr = localNode.Address()
 	remoteNet, _ := NewNet(config.DefaultConfig(), remoteNode)
 	outchan := remoteNet.SubscribeOnNewRemoteConnections()
-	out, session, er := GenerateHandshakeRequestData(localNode.PublicKey(), localNode.PrivateKey(), remoteNode.PublicKey(), remoteNet.NetworkID(), getPort(t, remoteNode.Node))
-	assert.NoError(t, er, "cant generate handshake message")
-	data, err := proto.Marshal(out)
-	assert.NoError(t, err, "cannot marshal obj")
+	data, _, _, err := GenerateHandshakeRequestData(remoteNode.PublicKey(), localNode.PublicKey(),
+		localNode.PrivateKey(), remoteNet.NetworkID(), getPort(t, remoteNode.Node))
+	assert.NoError(t, err, "cant generate handshake message")
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		waitForCallbackOrTimeout(t, outchan, session)
+		waitForCallbackOrTimeout(t, outchan, localNode.PublicKey())
 	}()
 
 	wg.Wait()
@@ -103,7 +83,7 @@ func TestHandlePreSessionIncomingMessage(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		waitForCallbackOrTimeout(t, outchan, session)
+		waitForCallbackOrTimeout(t, outchan, localNode.PublicKey())
 	}()
 
 	wg.Wait()
@@ -123,11 +103,4 @@ func TestHandlePreSessionIncomingMessage(t *testing.T) {
 	err = remoteNet.HandlePreSessionIncomingMessage(othercon, data)
 	assert.Error(t, err, "handle session failed")
 	assert.Nil(t, othercon.Session())
-
-	out.NetworkID = out.NetworkID + 1
-	data, err = proto.Marshal(out)
-	assert.NoError(t, err, "cannot marshal obj")
-	err = remoteNet.HandlePreSessionIncomingMessage(con, data)
-	assert.Error(t, err, "Sent message with wrong networkID")
-	//,_, er = GenerateHandshakeRequestData(localNode.PublicKey(), localNode.PrivateKey(),con.RemotePublicKey(), remoteNet.NetworkID() +1)
 }

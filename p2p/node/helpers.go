@@ -3,8 +3,8 @@ package node
 import (
 	"errors"
 	"fmt"
-	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"math/rand"
 	"net"
 	"testing"
@@ -53,7 +53,7 @@ func GenerateRandomNodeData() Node {
 	port := rand.Int31n(48127) + 1024
 
 	address := fmt.Sprintf("0.0.0.0:%d", port)
-	_, pub, _ := crypto.GenerateKeyPair()
+	_, pub, _ := cryptoSign.GenerateKeyPair()
 	return Node{pub, address}
 }
 

@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"github.com/spacemeshos/go-spacemesh/p2p/connectionpool"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/dht"
 	"testing"
 	"time"
@@ -24,10 +25,10 @@ import (
 const debug = false
 
 type cpoolMock struct {
-	f func(address string, pk crypto.PublicKey) (net.Connection, error)
+	f func(address string, pk cryptoSign.PublicKey) (net.Connection, error)
 }
 
-func (cp *cpoolMock) GetConnection(address string, pk crypto.PublicKey) (net.Connection, error) {
+func (cp *cpoolMock) GetConnection(address string, pk cryptoSign.PublicKey) (net.Connection, error) {
 	if cp.f != nil {
 		return cp.f(address, pk)
 	}
@@ -137,7 +138,7 @@ func TestSwarm_processMessage(t *testing.T) {
 func TestSwarm_authAuthor(t *testing.T) {
 	// create a message
 
-	priv, pub, err := crypto.GenerateKeyPair()
+	priv, pub, err := cryptoSign.GenerateKeyPair()
 
 	assert.NoError(t, err, err)
 	assert.NotNil(t, priv)
@@ -151,8 +152,7 @@ func TestSwarm_authAuthor(t *testing.T) {
 	assert.NoError(t, err, "cant marshal msg ", err)
 
 	// sign it
-	s, err := priv.Sign(ppm)
-	assert.NoError(t, err, "cant sign ", err)
+	s := priv.Sign(ppm)
 
 	pm.Metadata.MsgSign = s
 
@@ -202,7 +202,7 @@ func Test_ConnectionBeforeMessage(t *testing.T) {
 	go func () {
 		for {
 			msg := <-c2 // immediate response will probably trigger GetConnection fast
-			p2.SendMessage(msg.Sender().PublicKey().String(), exampleProtocol, []byte("RESP"))
+			p2.SendMessage(msg.Sender().PublicKey(), exampleProtocol, []byte("RESP"))
 			wg.Done()
 		}
 	}()
@@ -211,7 +211,7 @@ func Test_ConnectionBeforeMessage(t *testing.T) {
 
 	//called := make(chan struct{}, numNodes)
 	cpm := new(cpoolMock)
-	cpm.f = func(address string, pk crypto.PublicKey) (net.Connection, error) {
+	cpm.f = func(address string, pk cryptoSign.PublicKey) (net.Connection, error) {
 		c, err := oldCpool.GetConnectionIfExists(pk)
 		if err != nil {
 			t.Fatal("Didn't get connection yet while SendMessage called GetConnection")
@@ -231,7 +231,7 @@ func Test_ConnectionBeforeMessage(t *testing.T) {
 			p1 := p2pTestInstance(t, config.DefaultConfig())
 			_ = p1.RegisterProtocol(exampleProtocol)
 			p1.dht.Update(p2.lNode.Node)
-			err := p1.SendMessage(p2.lNode.PublicKey().String(), exampleProtocol, payload)
+			err := p1.SendMessage(p2.lNode.PublicKey(), exampleProtocol, payload)
 			assert.NoError(t, err)
 		}()
 	}
@@ -247,7 +247,7 @@ func RandString(n int) string {
 	return string(b)
 }
 
-func sendDirectMessage(t *testing.T, sender *swarm, recvPub string, inChan chan service.Message, checkpayload bool) {
+func sendDirectMessage(t *testing.T, sender *swarm, recvPub cryptoSign.PublicKey, inChan chan service.Message, checkpayload bool) {
 	payload := []byte(RandString(10))
 	err := sender.SendMessage(recvPub, exampleProtocol, payload)
 	assert.NoError(t, err)
@@ -274,8 +274,8 @@ func TestSwarm_RoundTrip(t *testing.T) {
 
 	p2.dht.Update(p1.lNode.Node)
 
-	sendDirectMessage(t, p2, p1.lNode.PublicKey().String(), exchan1, true)
-	sendDirectMessage(t, p1, p2.lNode.PublicKey().String(), exchan2, true)
+	sendDirectMessage(t, p2, p1.lNode.PublicKey(), exchan1, true)
+	sendDirectMessage(t, p1, p2.lNode.PublicKey(), exchan2, true)
 }
 
 func TestSwarm_MultipleMessages(t *testing.T) {
@@ -287,14 +287,14 @@ func TestSwarm_MultipleMessages(t *testing.T) {
 	exchan2 := p2.RegisterProtocol(exampleProtocol)
 	assert.Equal(t, exchan2, p2.protocolHandlers[exampleProtocol])
 
-	err := p2.SendMessage(p1.lNode.String(), exampleProtocol, []byte(examplePayload))
+	err := p2.SendMessage(p1.lNode.PublicKey(), exampleProtocol, []byte(examplePayload))
 	assert.Error(t, err, "ERR") // should'nt be in routing table
 	p2.dht.Update(p1.lNode.Node)
 
 	var wg sync.WaitGroup
 	for i := 0; i < 500; i++ {
 		wg.Add(1)
-		go func() { sendDirectMessage(t, p2, p1.lNode.String(), exchan1, false); wg.Done() }()
+		go func() { sendDirectMessage(t, p2, p1.lNode.PublicKey(), exchan1, false); wg.Done() }()
 	}
 	wg.Wait()
 }
@@ -340,7 +340,7 @@ func TestSwarm_MultipleMessagesFromMultipleSenders(t *testing.T) {
 			mu.Unlock()
 
 			payload := []byte(RandString(10))
-			err := p.SendMessage(p1.lNode.PublicKey().String(), exampleProtocol, payload)
+			err := p.SendMessage(p1.lNode.PublicKey(), exampleProtocol, payload)
 			assert.NoError(t, err)
 		}()
 	}
@@ -418,7 +418,7 @@ func TestSwarm_onRemoteClientMessage(t *testing.T) {
 	session.SetDecrypt(goodbin, nil)
 
 	err = p.onRemoteClientMessage(imc)
-	assert.Equal(t, ErrAuthAuthor, err)
+	assert.Equal(t, ErrAuthAuthor, err) // TODO
 
 	goodmsg.Metadata.Timestamp = time.Now().Add(-time.Hour).Unix()
 	err = message.SignMessage(id.PrivateKey(), goodmsg)
@@ -466,7 +466,7 @@ func TestSwarm_onRemoteClientMessage(t *testing.T) {
 
 }
 
-func assertNewPeerEvent(t *testing.T, peer crypto.PublicKey, connChan <-chan crypto.PublicKey) {
+func assertNewPeerEvent(t *testing.T, peer cryptoSign.PublicKey, connChan <-chan cryptoSign.PublicKey) {
 	select {
 	case newPeer := <-connChan:
 		assert.Equal(t, peer.String(), newPeer.String())
@@ -475,7 +475,7 @@ func assertNewPeerEvent(t *testing.T, peer crypto.PublicKey, connChan <-chan cry
 	}
 }
 
-func assertNewPeerEvents(t *testing.T, expCount int, connChan <-chan crypto.PublicKey) {
+func assertNewPeerEvents(t *testing.T, expCount int, connChan <-chan cryptoSign.PublicKey) {
 	//var actCount int
 	//loop:
 	//for {
@@ -489,7 +489,7 @@ func assertNewPeerEvents(t *testing.T, expCount int, connChan <-chan crypto.Publ
 	assert.Equal(t, expCount, len(connChan))
 }
 
-func assertNoNewPeerEvent(t *testing.T, eventChan <-chan crypto.PublicKey) {
+func assertNoNewPeerEvent(t *testing.T, eventChan <-chan cryptoSign.PublicKey) {
 	select {
 	case newPeer := <-eventChan:
 		assert.Error(t, errors.New("unexpected new peer event, peer "+newPeer.String()))
@@ -498,7 +498,7 @@ func assertNoNewPeerEvent(t *testing.T, eventChan <-chan crypto.PublicKey) {
 	}
 }
 
-func assertNewDisconnectedPeerEvent(t *testing.T, peer crypto.PublicKey, discChan <-chan crypto.PublicKey) {
+func assertNewDisconnectedPeerEvent(t *testing.T, peer cryptoSign.PublicKey, discChan <-chan cryptoSign.PublicKey) {
 	select {
 	case newPeer := <-discChan:
 		assert.Equal(t, peer.String(), newPeer.String())
@@ -516,7 +516,7 @@ func assertNoNewDisconnectedPeerEvent(t *testing.T, eventChan <-chan crypto.Publ
 	}
 }
 
-func drainPeerEvents(eventChan <-chan crypto.PublicKey) {
+func drainPeerEvents(eventChan <-chan cryptoSign.PublicKey) {
 loop:
 	for {
 		select {
@@ -559,7 +559,7 @@ func Test_Swarm_getMorePeers(t *testing.T) {
 	cpm := new(cpoolMock)
 
 	// test connection error
-	cpm.f = func(address string, pk crypto.PublicKey) (net.Connection, error) {
+	cpm.f = func(address string, pk cryptoSign.PublicKey) (net.Connection, error) {
 		return nil, errors.New("can't make connection")
 	}
 
@@ -641,7 +641,7 @@ func TestNeighborhood_Initial(t *testing.T) {
 	p = p2pTestNoStart(t, cfg)
 	p.dht = mdht
 	cpm := new(cpoolMock)
-	cpm.f = func(address string, pk crypto.PublicKey) (net.Connection, error) {
+	cpm.f = func(address string, pk cryptoSign.PublicKey) (net.Connection, error) {
 		return net.NewConnectionMock(pk), nil
 	}
 	p.cPool = cpm
@@ -677,7 +677,7 @@ func TestNeighborhood_Disconnect(t *testing.T) {
 
 	// manualy add an incoming peer
 	rnd2 := node.GenerateRandomNodeData()
-	n.outpeers[rnd2.PublicKey().String()] = rnd2.PublicKey() // no need to lock nothing's happening
+	n.outpeers[rnd2.PublicKey()] = rnd2.PublicKey() // no need to lock nothing's happening
 	go n.Disconnect(rnd2.PublicKey())
 	ti = time.After(time.Millisecond)
 	select {
@@ -695,7 +695,7 @@ func TestSwarm_AddIncomingPeer(t *testing.T) {
 	p.addIncomingPeer(rnd.PublicKey())
 
 	p.inpeersMutex.RLock()
-	peer, ok := p.inpeers[rnd.PublicKey().String()]
+	peer, ok := p.inpeers[rnd.PublicKey()]
 	p.inpeersMutex.RUnlock()
 
 	assert.True(t, ok)

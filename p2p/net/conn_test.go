@@ -2,7 +2,7 @@ package net
 
 import (
 	"fmt"
-	"github.com/spacemeshos/go-spacemesh/crypto"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/delimited"
 	"github.com/stretchr/testify/assert"
 	"math/rand"
@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-func generatePublicKey() crypto.PublicKey {
-	_, pubKey, _ := crypto.GenerateKeyPair()
+func generatePublicKey() cryptoSign.PublicKey {
+	_, pubKey, _ := cryptoSign.GenerateKeyPair()
 	return pubKey
 }
 

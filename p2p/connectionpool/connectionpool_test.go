@@ -3,7 +3,7 @@ package connectionpool
 import (
 	"errors"
 	"fmt"
-	"github.com/spacemeshos/go-spacemesh/crypto"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/net"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/stretchr/testify/assert"
@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-func generatePublicKey() crypto.PublicKey {
-	_, pubKey, _ := crypto.GenerateKeyPair()
+func generatePublicKey() cryptoSign.PublicKey {
+	_, pubKey, _ := cryptoSign.GenerateKeyPair()
 	return pubKey
 }
 
@@ -244,7 +244,7 @@ func TestClosedConnection(t *testing.T) {
 
 func TestRandom(t *testing.T) {
 	type Peer struct {
-		key  crypto.PublicKey
+		key  cryptoSign.PublicKey
 		addr string
 	}
 

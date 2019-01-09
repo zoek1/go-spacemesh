@@ -2,9 +2,9 @@ package gossip
 
 import (
 	"github.com/gogo/protobuf/proto"
-	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/pb"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
@@ -15,10 +15,10 @@ import (
 )
 
 type mockBaseNetwork struct {
-	msgSentByPeer        map[string]uint32
+	msgSentByPeer        map[cryptoSign.PublicKey]uint32
 	inbox                chan service.Message
-	connSubs             []chan crypto.PublicKey
-	discSubs             []chan crypto.PublicKey
+	connSubs             []chan cryptoSign.PublicKey
+	discSubs             []chan cryptoSign.PublicKey
 	totalMsgCount        int
 	processProtocolCount int
 	msgMutex             sync.Mutex
@@ -29,10 +29,10 @@ type mockBaseNetwork struct {
 
 func newMockBaseNetwork() *mockBaseNetwork {
 	return &mockBaseNetwork{
-		make(map[string]uint32),
+		make(map[cryptoSign.PublicKey]uint32),
 		make(chan service.Message, 30),
-		make([]chan crypto.PublicKey, 0, 5),
-		make([]chan crypto.PublicKey, 0, 5),
+		make([]chan cryptoSign.PublicKey, 0, 5),
+		make([]chan cryptoSign.PublicKey, 0, 5),
 		0,
 		0,
 		sync.Mutex{},
@@ -42,7 +42,7 @@ func newMockBaseNetwork() *mockBaseNetwork {
 	}
 }
 
-func (mbn *mockBaseNetwork) SendMessage(peerPubKey string, protocol string, payload []byte) error {
+func (mbn *mockBaseNetwork) SendMessage(peerPubKey cryptoSign.PublicKey, protocol string, payload []byte) error {
 	mbn.msgMutex.Lock()
 	mbn.lastMsg = payload
 	mbn.msgSentByPeer[peerPubKey]++
@@ -79,9 +79,9 @@ func (mbn *mockBaseNetwork) RegisterProtocol(protocol string) chan service.Messa
 	return mbn.inbox
 }
 
-func (mbn *mockBaseNetwork) SubscribePeerEvents() (conn chan crypto.PublicKey, disc chan crypto.PublicKey) {
-	conn = make(chan crypto.PublicKey, 20)
-	disc = make(chan crypto.PublicKey, 20)
+func (mbn *mockBaseNetwork) SubscribePeerEvents() (conn chan cryptoSign.PublicKey, disc chan cryptoSign.PublicKey) {
+	conn = make(chan cryptoSign.PublicKey, 20)
+	disc = make(chan cryptoSign.PublicKey, 20)
 
 	mbn.connSubs = append(mbn.connSubs, conn)
 	mbn.discSubs = append(mbn.discSubs, disc)
@@ -96,12 +96,12 @@ func (mbn *mockBaseNetwork) ProcessProtocolMessage(sender node.Node, protocol st
 
 func (mbn *mockBaseNetwork) addRandomPeers(cnt int) {
 	for i := 0; i < cnt; i++ {
-		_, pub, _ := crypto.GenerateKeyPair()
+		_, pub, _ := cryptoSign.GenerateKeyPair()
 		mbn.addRandomPeer(pub)
 	}
 }
 
-func (mbn *mockBaseNetwork) addRandomPeer(pub crypto.PublicKey) {
+func (mbn *mockBaseNetwork) addRandomPeer(pub cryptoSign.PublicKey) {
 	for _, p := range mbn.connSubs {
 		p <- pub
 	}
@@ -146,21 +146,22 @@ func (tm TestMessage) Bytes() []byte {
 }
 
 type testSigner struct {
-	pv crypto.PrivateKey
+	priv cryptoSign.PrivateKey
+	pub cryptoSign.PublicKey
 }
 
-func (ms testSigner) PublicKey() crypto.PublicKey {
-	return ms.pv.GetPublicKey()
+func (ms testSigner) PublicKey() cryptoSign.PublicKey {
+	return ms.pub
 }
 
-func (ms testSigner) Sign(data []byte) ([]byte, error) {
-	return ms.pv.Sign(data)
+func (ms testSigner) Sign(data []byte) []byte {
+	return ms.priv.Sign(data)
 }
 
 func newTestSigner(t testing.TB) testSigner {
-	pv, _, err := crypto.GenerateKeyPair()
+	priv, pub, err := cryptoSign.GenerateKeyPair()
 	assert.NoError(t, err)
-	return testSigner{pv}
+	return testSigner{priv, pub}
 }
 
 func newTestSignedMessageData(t testing.TB, signer signer) []byte {
@@ -211,7 +212,7 @@ lop:
 func TestNeighborhood_AddIncomingPeer(t *testing.T) {
 	n := NewProtocol(config.DefaultConfig().SwarmConfig, newMockBaseNetwork(), newTestSigner(t), log.New("tesT", "", ""))
 	n.Start()
-	_, pub, _ := crypto.GenerateKeyPair()
+	_, pub, _ := cryptoSign.GenerateKeyPair()
 	n.addPeer(pub)
 
 	assert.True(t, n.hasPeer(pub))
@@ -221,7 +222,7 @@ func TestNeighborhood_AddIncomingPeer(t *testing.T) {
 func signedMessage(t testing.TB, s signer, message *pb.ProtocolMessage) service.Data {
 	pmbin, err := proto.Marshal(message)
 	assert.NoError(t, err)
-	sign, err := s.Sign(pmbin)
+	sign := s.Sign(pmbin)
 	assert.NoError(t, err)
 	message.Metadata.MsgSign = sign
 	finbin, err := proto.Marshal(message)
@@ -405,9 +406,9 @@ func TestNeighborhood_Disconnect(t *testing.T) {
 	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
 
 	n.Start()
-	_, pub1, _ := crypto.GenerateKeyPair()
+	_, pub1, _ := cryptoSign.GenerateKeyPair()
 	n.addPeer(pub1)
-	_, pub2, _ := crypto.GenerateKeyPair()
+	_, pub2, _ := cryptoSign.GenerateKeyPair()
 	n.addPeer(pub2)
 	assert.Equal(t, 2, n.peersCount())
 

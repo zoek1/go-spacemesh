@@ -2,13 +2,11 @@ package net
 
 import (
 	"fmt"
-	"github.com/gogo/protobuf/proto"
-	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/delimited"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
-	"github.com/spacemeshos/go-spacemesh/p2p/pb"
 	"gopkg.in/op/go-logging.v1"
 	"net"
 	"strconv"
@@ -167,7 +165,7 @@ func (n *Net) publishClosingConnection(connection Connection) {
 	n.clsMutex.RUnlock()
 }
 
-func (n *Net) createConnection(address string, remotePub crypto.PublicKey, timeOut time.Duration, keepAlive time.Duration) (ManagedConnection, error) {
+func (n *Net) createConnection(address string, remotePub cryptoSign.PublicKey, timeOut time.Duration, keepAlive time.Duration) (ManagedConnection, error) {
 	if n.isShuttingDown {
 		return nil, fmt.Errorf("can't dial because the connection is shutting down")
 	}
@@ -175,7 +173,7 @@ func (n *Net) createConnection(address string, remotePub crypto.PublicKey, timeO
 	dialer := &net.Dialer{}
 	dialer.KeepAlive = keepAlive // drop connections after a period of inactivity
 	dialer.Timeout = timeOut     // max time bef
-	n.logger.Debug("Dialing %v @ %v...", remotePub.Pretty(), address)
+	n.logger.Debug("Dialing %v @ %v...", remotePub.String(), address)
 
 	netConn, err := dialer.Dial("tcp", address)
 
@@ -190,23 +188,18 @@ func (n *Net) createConnection(address string, remotePub crypto.PublicKey, timeO
 	return c, nil
 }
 
-func (n *Net) createSecuredConnection(address string, remotePublicKey crypto.PublicKey, timeOut time.Duration, keepAlive time.Duration) (ManagedConnection, error) {
+func (n *Net) createSecuredConnection(address string, remotePublicKey cryptoSign.PublicKey, timeOut time.Duration, keepAlive time.Duration) (ManagedConnection, error) {
 	errMsg := "failed to establish secured connection."
 	conn, err := n.createConnection(address, remotePublicKey, timeOut, keepAlive)
 	if err != nil {
 		return nil, err
 	}
-	data, session, err := GenerateHandshakeRequestData(n.localNode.PublicKey(), n.localNode.PrivateKey(), remotePublicKey, n.networkID, uint16(n.tcpListenAddress.Port))
+	payload, session, ephemeralPrivkey, err := GenerateHandshakeRequestData(remotePublicKey, n.localNode.PublicKey(), n.localNode.PrivateKey(), n.networkID, uint16(n.tcpListenAddress.Port))
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("%s err: %v", errMsg, err)
 	}
 	n.logger.Debug("Creating session handshake request session id: %s", session)
-	payload, err := proto.Marshal(data)
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("%s err: %v", errMsg, err)
-	}
 
 	err = conn.Send(payload)
 	if err != nil {
@@ -229,15 +222,7 @@ func (n *Net) createSecuredConnection(address string, remotePublicKey crypto.Pub
 		return nil, fmt.Errorf("%s err: HS response timed-out", errMsg)
 	}
 
-	respData := &pb.HandshakeData{}
-	err = proto.Unmarshal(msg, respData)
-	if err != nil {
-		//n.logger.Warning("invalid incoming handshake resp bin data", err)
-		conn.Close()
-		return nil, fmt.Errorf("%s err: %v", errMsg, err)
-	}
-
-	err = ProcessHandshakeResponse(remotePublicKey, session, respData)
+	err = ProcessHandshakeResponse(msg, ephemeralPrivkey, session)
 	if err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("%s err: %v", errMsg, err)
@@ -250,7 +235,7 @@ func (n *Net) createSecuredConnection(address string, remotePublicKey crypto.Pub
 // address:: ip:port
 // Returns established connection that local clients can send messages to or error if failed
 // to establish a connection, currently only secured connections are supported
-func (n *Net) Dial(address string, remotePublicKey crypto.PublicKey) (Connection, error) {
+func (n *Net) Dial(address string, remotePublicKey cryptoSign.PublicKey) (Connection, error) {
 	conn, err := n.createSecuredConnection(address, remotePublicKey, n.config.DialTimeout, n.config.ConnKeepAlive)
 	if err != nil {
 		return nil, fmt.Errorf("failed to Dail. err: %v", err)
@@ -325,29 +310,11 @@ func (n *Net) publishNewRemoteConnectionEvent(conn Connection, node node.Node) {
 func (n *Net) HandlePreSessionIncomingMessage(c Connection, message []byte) error {
 	//TODO replace the next few lines with a way to validate that the message is a handshake request based on the message metadata
 	errMsg := "failed to handle handshake request"
-	data := &pb.HandshakeData{}
 
-	err := proto.Unmarshal(message, data)
+	payload, session, peerPort, err :=
+		ProcessHandshakeRequest(message, n.localNode.PublicKey(), n.localNode.PrivateKey(), n.networkID, uint16(n.tcpListenAddress.Port))
 	if err != nil {
 		return fmt.Errorf("%s. err: %v", errMsg, err)
-	}
-
-	// new remote connection doesn't hold the remote public key until it gets the handshake request
-	if c.RemotePublicKey() == nil {
-		rPub, err := crypto.NewPublicKey(data.GetNodePubKey())
-		n.Logger().Debug("DEBUG: handling HS req from %v", rPub)
-		if err != nil {
-			return fmt.Errorf("%s. err: %v", errMsg, err)
-		}
-		c.SetRemotePublicKey(rPub)
-	}
-	respData, session, err := ProcessHandshakeRequest(n.NetworkID(), n.localNode.PublicKey(), n.localNode.PrivateKey(), c.RemotePublicKey(), data)
-	if err != nil {
-		return fmt.Errorf("%s. err: %v", errMsg, err)
-	}
-	payload, err := proto.Marshal(respData)
-	if err != nil {
-		return fmt.Errorf("%s. hereto err: %v", errMsg, err)
 	}
 
 	// update on new connection
@@ -356,7 +323,7 @@ func (n *Net) HandlePreSessionIncomingMessage(c Connection, message []byte) erro
 		return fmt.Errorf("un-valid address format, (%v) err: %v", c.RemoteAddr().String(), err)
 	}
 
-	anode := node.New(c.RemotePublicKey(), net.JoinHostPort(addr, strconv.Itoa(int(data.Port))))
+	anode := node.New(c.RemotePublicKey(), net.JoinHostPort(addr, strconv.Itoa(int(peerPort))))
 
 	err = c.Send(payload)
 	if err != nil {
@@ -364,6 +331,8 @@ func (n *Net) HandlePreSessionIncomingMessage(c Connection, message []byte) erro
 	}
 
 	c.SetSession(session)
+	c.SetRemotePublicKey(session.PeerPubkey())
+
 	n.publishNewRemoteConnectionEvent(c, anode)
 	return nil
 }

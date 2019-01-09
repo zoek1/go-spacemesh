@@ -6,23 +6,13 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
-	"github.com/spacemeshos/go-spacemesh/p2p/net"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/pb"
 	"time"
 )
 
-// PrepareMessage prepares a message for sending on a given session, session must be checked first
-func PrepareMessage(ns net.NetworkSession, data []byte) ([]byte, error) {
-	encPayload, err := ns.Encrypt(data)
-	if err != nil {
-		return nil, fmt.Errorf("aborting send - failed to encrypt payload: %v", err)
-	}
-
-	return encPayload, nil
-}
-
 // NewProtocolMessageMetadata creates meta-data for an outgoing protocol message authored by this node.
-func NewProtocolMessageMetadata(author crypto.PublicKey, protocol string) *pb.Metadata {
+func NewProtocolMessageMetadata(author cryptoSign.PublicKey, protocol string) *pb.Metadata {
 	return &pb.Metadata{
 		NextProtocol:  protocol,
 		ClientVersion: config.ClientVersion,
@@ -32,25 +22,23 @@ func NewProtocolMessageMetadata(author crypto.PublicKey, protocol string) *pb.Me
 }
 
 // SignMessage signs a message with a privatekey.
-func SignMessage(pv crypto.PrivateKey, pm *pb.ProtocolMessage) error {
+func SignMessage(pv cryptoSign.PrivateKey, pm *pb.ProtocolMessage) error {
 	data, err := proto.Marshal(pm)
 	if err != nil {
 		e := fmt.Errorf("invalid msg format %v", err)
 		return e
 	}
 
-	sign, err := pv.Sign(data)
-	if err != nil {
-		return fmt.Errorf("failed to sign message err:%v", err)
-	}
+	sign := pv.Sign(data)
 
-	pm.Metadata.MsgSign = sign
+	pm.Metadata.MsgSign = sign // TODO: `sign` is currently the signed message, not the message signature
 
 	return nil
 }
 
 // AuthAuthor authorizes that a message is signed by its claimed author
 func AuthAuthor(pm *pb.ProtocolMessage) error {
+	// TODO
 	if pm == nil || pm.Metadata == nil {
 		return fmt.Errorf("can't sign defected message, message or metadata was empty")
 	}

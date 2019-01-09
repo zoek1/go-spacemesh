@@ -3,9 +3,9 @@ package gossip
 import (
 	"errors"
 	"github.com/golang/protobuf/proto"
-	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/message"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/pb"
@@ -31,15 +31,15 @@ func calcHash(msg []byte) hash {
 
 // Interface for the underlying p2p layer
 type baseNetwork interface {
-	SendMessage(peerPubKey string, protocol string, payload []byte) error
+	SendMessage(peerPubKey cryptoSign.PublicKey, protocol string, payload []byte) error
 	RegisterProtocol(protocol string) chan service.Message
-	SubscribePeerEvents() (conn chan crypto.PublicKey, disc chan crypto.PublicKey)
+	SubscribePeerEvents() (conn chan cryptoSign.PublicKey, disc chan cryptoSign.PublicKey)
 	ProcessProtocolMessage(sender node.Node, protocol string, data service.Data) error
 }
 
 type signer interface {
-	PublicKey() crypto.PublicKey
-	Sign(data []byte) ([]byte, error)
+	PublicKey() cryptoSign.PublicKey
+	Sign(data []byte) []byte
 }
 
 type protocolMessage struct {
@@ -85,19 +85,19 @@ func NewProtocol(config config.SwarmConfig, base baseNetwork, signer signer, log
 
 // sender is an interface for peer's p2p layer
 type sender interface {
-	SendMessage(peerPubKey string, protocol string, payload []byte) error
+	SendMessage(peerPubKey cryptoSign.PublicKey, protocol string, payload []byte) error
 }
 
 // peer is a struct storing peer's state
 type peer struct {
 	log.Log
-	pubKey        crypto.PublicKey
+	pubKey        cryptoSign.PublicKey
 	msgMutex      sync.RWMutex
 	knownMessages map[hash]struct{}
 	net           sender
 }
 
-func newPeer(net sender, pubKey crypto.PublicKey, log log.Log) *peer {
+func newPeer(net sender, pubKey cryptoSign.PublicKey, log log.Log) *peer {
 	return &peer{
 		log,
 		pubKey,
@@ -117,11 +117,11 @@ func (p *peer) send(msg []byte, checksum hash) error {
 	}
 	p.msgMutex.RUnlock()
 	go func() {
-		err := p.net.SendMessage(p.pubKey.String(), ProtocolName, msg)
+		err := p.net.SendMessage(p.pubKey, ProtocolName, msg)
 		if err != nil {
 			p.Log.Info("Gossip protocol failed to send msg (calcHash %d) to peer %v, first attempt. err=%v", checksum, p.pubKey, err)
 			// doing one retry before giving up
-			err = p.net.SendMessage(p.pubKey.String(), "", msg)
+			err = p.net.SendMessage(p.pubKey, "", msg)
 			if err != nil {
 				p.Log.Info("Gossip protocol failed to send msg (calcHash %d) to peer %v, second attempt. err=%v", checksum, p.pubKey, err)
 				return
@@ -195,11 +195,7 @@ func (prot *Protocol) Broadcast(payload []byte, nextProt string) error {
 
 	}
 
-	sign, err2 := prot.signer.Sign(bin)
-	if err2 != nil {
-		prot.Log.Error("failed to Sign header when generating gossip header, err %v", err)
-		return err
-	}
+	sign := prot.signer.Sign(bin) // TODO: sign is currently the signed message, not the signature
 
 	msg.Metadata.MsgSign = sign
 
@@ -221,13 +217,13 @@ func (prot *Protocol) Start() {
 	go prot.eventLoop(peerConn, peerDisc)
 }
 
-func (prot *Protocol) addPeer(peer crypto.PublicKey) {
+func (prot *Protocol) addPeer(peer cryptoSign.PublicKey) {
 	prot.peersMutex.Lock()
 	prot.peers[peer.String()] = newPeer(prot.net, peer, prot.Log)
 	prot.peersMutex.Unlock()
 }
 
-func (prot *Protocol) removePeer(peer crypto.PublicKey) {
+func (prot *Protocol) removePeer(peer cryptoSign.PublicKey) {
 	prot.peersMutex.Lock()
 	delete(prot.peers, peer.String())
 	prot.peersMutex.Unlock()
@@ -278,7 +274,7 @@ func (prot *Protocol) handleRelayMessage(msgB []byte) error {
 			data = &service.DataMsgWrapper{Req: wrap.Req, MsgType: wrap.Type, ReqID: wrap.ReqID, Payload: wrap.Payload}
 		}
 
-		authKey, err := crypto.NewPublicKey(msg.Metadata.AuthPubKey)
+		authKey, err := cryptoSign.NewPublicKey(msg.Metadata.AuthPubKey)
 		if err != nil {
 			prot.Log.Error("failed to decode the auth public key when handling relay message, err %v", err)
 			return err
@@ -292,7 +288,7 @@ func (prot *Protocol) handleRelayMessage(msgB []byte) error {
 	return nil
 }
 
-func (prot *Protocol) eventLoop(peerConn chan crypto.PublicKey, peerDisc chan crypto.PublicKey) {
+func (prot *Protocol) eventLoop(peerConn chan cryptoSign.PublicKey, peerDisc chan cryptoSign.PublicKey) {
 	var err error
 loop:
 	for {
@@ -328,7 +324,7 @@ func (prot *Protocol) peersCount() int {
 }
 
 // hasPeer returns whether or not a peer is known to the protocol, used for testing only
-func (prot *Protocol) hasPeer(key crypto.PublicKey) bool {
+func (prot *Protocol) hasPeer(key cryptoSign.PublicKey) bool {
 	prot.peersMutex.RLock()
 	_, ok := prot.peers[key.String()]
 	prot.peersMutex.RUnlock()

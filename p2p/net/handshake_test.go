@@ -3,8 +3,8 @@ package net
 import (
 	"fmt"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoBox"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
-	"github.com/spacemeshos/go-spacemesh/p2p/pb"
 	"github.com/stretchr/testify/assert"
 	"net"
 	"strconv"
@@ -22,8 +22,9 @@ func TestGenerateHandshakeRequestData(t *testing.T) {
 	remoteNet, _ := NewNet(config.ConfigValues, remoteNode)
 
 	//outchan := remoteNet.SubscribeOnNewRemoteConnections()
-	_, _, er := GenerateHandshakeRequestData(localNode.PublicKey(), localNode.PrivateKey(), con.RemotePublicKey(), remoteNet.NetworkID(), getPort(t, remoteNode.Node))
-	assert.NoError(t, er, "Sanity failed")
+	_, _, _, err = GenerateHandshakeRequestData(con.RemotePublicKey(), localNode.PublicKey(), localNode.PrivateKey(),
+		remoteNet.NetworkID(), getPort(t, remoteNode.Node))
+	assert.NoError(t, err, "Sanity failed")
 
 }
 
@@ -35,50 +36,52 @@ func getPort(t *testing.T, remote node.Node) uint16 {
 	return uint16(portint)
 }
 
-func generateRequestData(t *testing.T) (*pb.HandshakeData, node.LocalNode, node.LocalNode, int8) {
+func generateRequestData(t *testing.T) ([]byte, NetworkSession, node.LocalNode, int8, cryptoBox.Key) {
 
-	localNode, _ := node.GenerateTestNode(t)
-	remoteNode, _ := node.GenerateTestNode(t)
+	initiatorNode, _ := node.GenerateTestNode(t)
+	responderNode, _ := node.GenerateTestNode(t)
 	netId := int8(1)
-	out, _, err := GenerateHandshakeRequestData(localNode.PublicKey(), localNode.PrivateKey(), remoteNode.PublicKey(), netId, getPort(t, remoteNode.Node))
+	handshakeRequest, initiatorSession, initiatorEphemeralPrivkey, err := GenerateHandshakeRequestData(
+		responderNode.PublicKey(),
+		initiatorNode.PublicKey(), initiatorNode.PrivateKey(),
+		netId, getPort(t, responderNode.Node))
 	assert.NoError(t, err, "Failed to generate request")
-	return out, *localNode, *remoteNode, netId
+	return handshakeRequest, initiatorSession, *responderNode, netId, initiatorEphemeralPrivkey
 }
 
 func TestProcessHandshakeRequest(t *testing.T) {
 	//Sanity
-	data, localNode, remoteNet, netId := generateRequestData(t)
-	//processing request in remoteNet from local node
-	_, _, err := ProcessHandshakeRequest(netId, remoteNet.PublicKey(), remoteNet.PrivateKey(), localNode.PublicKey(), data)
+	handshakeRequest, _, responderNode, netId, _ := generateRequestData(t)
+	port := getPort(t, responderNode.Node)
+	//processing request in responderNode from initiatorNode
+	_, _, _, err :=
+		ProcessHandshakeRequest(handshakeRequest, responderNode.PublicKey(), responderNode.PrivateKey(), netId, port)
 	assert.NoError(t, err, "Sanity processing request failed", err)
 
-	_, _, err = ProcessHandshakeRequest(netId, remoteNet.PublicKey(), remoteNet.PrivateKey(), localNode.PublicKey(), data)
+	_, _, _, err =
+		ProcessHandshakeRequest(handshakeRequest, responderNode.PublicKey(), responderNode.PrivateKey(), netId, port)
 	assert.NoError(t, err, "Data modified during test")
 
-	data.NetworkID = data.NetworkID + 1
-	_, _, err = ProcessHandshakeRequest(netId, remoteNet.PublicKey(), remoteNet.PrivateKey(), localNode.PublicKey(), data)
-	assert.Error(t, err, "Didnt receive error on network id incomaptible with request")
-	data.NetworkID = int32(netId)
-
-	//remoteNode, _ := node.GenerateTestNode(t)
-
-	_, _, err = ProcessHandshakeRequest(netId, remoteNet.PublicKey(), remoteNet.PrivateKey(), remoteNet.PublicKey(), data)
-	assert.Error(t, err, "Didnt receive error on remote public key incomaptible with request")
+	_, _, _, err =
+		ProcessHandshakeRequest(handshakeRequest, responderNode.PublicKey(), responderNode.PrivateKey(), netId+1, port)
+	assert.Error(t, err, "Didn't receive error on network id incompatible with request")
 
 }
 
 func TestProcessHandshakeResponse(t *testing.T) {
 	//Sanity
-	data, localNode, remoteNet, netId := generateRequestData(t)
-	reqMsg, session, err := ProcessHandshakeRequest(netId, remoteNet.PublicKey(), remoteNet.PrivateKey(), localNode.PublicKey(), data)
+	handshakeRequest, initiatorSession, responderNode, netId, initiatorEphemeralPrivkey := generateRequestData(t)
+	port := getPort(t, responderNode.Node)
+	handshakeResponse, responderSession, _, err := ProcessHandshakeRequest(handshakeRequest, responderNode.PublicKey(),
+		responderNode.PrivateKey(), netId, port)
 	assert.NoError(t, err, "Sanity creating request failed")
 
-	er := ProcessHandshakeResponse(remoteNet.PublicKey(), session, reqMsg)
-	assert.NoError(t, er, "Sanity processing response failed")
+	err = ProcessHandshakeResponse(handshakeResponse, initiatorEphemeralPrivkey, initiatorSession)
+	assert.NoError(t, err, "Sanity processing response failed")
 
-	er = ProcessHandshakeResponse(localNode.PublicKey(), session, reqMsg)
-	assert.Error(t, er, "remote key signing verification of response failed")
+	err = ProcessHandshakeResponse(handshakeResponse, initiatorEphemeralPrivkey, responderSession)
+	assert.Error(t, err, "remote key signing verification of response failed")
 
-	er = ProcessHandshakeResponse(remoteNet.PublicKey(), session, reqMsg)
-	assert.NoError(t, er, "Sanity processing response failed")
+	err = ProcessHandshakeResponse(handshakeResponse, initiatorEphemeralPrivkey, initiatorSession)
+	assert.NoError(t, err, "Sanity processing response failed")
 }

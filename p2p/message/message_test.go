@@ -4,6 +4,7 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/node"
 	"github.com/spacemeshos/go-spacemesh/p2p/pb"
 	"github.com/stretchr/testify/assert"
@@ -13,7 +14,7 @@ import (
 
 func Test_NewProtocolMessageMeatadata(t *testing.T) {
 	//newProtocolMessageMetadata()
-	_, pk, _ := crypto.GenerateKeyPair()
+	_, pk, _ := cryptoSign.GenerateKeyPair()
 	const gossip = false
 
 	assert.NotNil(t, pk)
@@ -31,7 +32,7 @@ func Test_NewProtocolMessageMeatadata(t *testing.T) {
 func TestSwarm_AuthAuthor(t *testing.T) {
 	// create a message
 
-	priv, pub, err := crypto.GenerateKeyPair()
+	priv, pub, err := cryptoSign.GenerateKeyPair()
 
 	assert.NoError(t, err, err)
 	assert.NotNil(t, priv)
@@ -45,8 +46,7 @@ func TestSwarm_AuthAuthor(t *testing.T) {
 	assert.NoError(t, err, "cant marshal msg ", err)
 
 	// sign it
-	s, err := priv.Sign(ppm)
-	assert.NoError(t, err, "cant sign ", err)
+	s := priv.Sign(ppm)
 
 	pm.Metadata.MsgSign = s
 

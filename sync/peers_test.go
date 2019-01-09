@@ -1,8 +1,8 @@
 package sync
 
 import (
-	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"github.com/stretchr/testify/assert"
 	"sync/atomic"
@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func getPeers(p p2p.Service) (Peers, chan crypto.PublicKey, chan crypto.PublicKey) {
+func getPeers(p p2p.Service) (Peers, chan cryptoSign.PublicKey, chan cryptoSign.PublicKey) {
 	value := atomic.Value{}
 	value.Store(make([]Peer, 0, 20))
 	pi := &PeersImpl{snapshot: &value, exit: make(chan struct{})}
@@ -21,7 +21,7 @@ func getPeers(p p2p.Service) (Peers, chan crypto.PublicKey, chan crypto.PublicKe
 
 func TestPeers_GetPeers(t *testing.T) {
 	pi, new, _ := getPeers(service.NewSimulator().NewNode())
-	_, a, _ := crypto.GenerateKeyPair()
+	_, a, _ := cryptoSign.GenerateKeyPair()
 	new <- a
 	time.Sleep(10 * time.Millisecond) //allow context switch
 	peers := pi.GetPeers()
@@ -32,7 +32,7 @@ func TestPeers_GetPeers(t *testing.T) {
 
 func TestPeers_Close(t *testing.T) {
 	pi, new, _ := getPeers(service.NewSimulator().NewNode())
-	_, a, _ := crypto.GenerateKeyPair()
+	_, a, _ := cryptoSign.GenerateKeyPair()
 	new <- a
 	time.Sleep(10 * time.Millisecond) //allow context switch
 	pi.Close()
@@ -44,11 +44,11 @@ func TestPeers_Close(t *testing.T) {
 
 func TestPeers_AddPeer(t *testing.T) {
 	pi, new, _ := getPeers(service.NewSimulator().NewNode())
-	_, a, _ := crypto.GenerateKeyPair()
-	_, b, _ := crypto.GenerateKeyPair()
-	_, c, _ := crypto.GenerateKeyPair()
-	_, d, _ := crypto.GenerateKeyPair()
-	_, e, _ := crypto.GenerateKeyPair()
+	_, a, _ := cryptoSign.GenerateKeyPair()
+	_, b, _ := cryptoSign.GenerateKeyPair()
+	_, c, _ := cryptoSign.GenerateKeyPair()
+	_, d, _ := cryptoSign.GenerateKeyPair()
+	_, e, _ := cryptoSign.GenerateKeyPair()
 	new <- a
 	time.Sleep(10 * time.Millisecond) //allow context switch
 	peers := pi.GetPeers()
@@ -65,11 +65,11 @@ func TestPeers_AddPeer(t *testing.T) {
 
 func TestPeers_RemovePeer(t *testing.T) {
 	pi, new, expierd := getPeers(service.NewSimulator().NewNode())
-	_, a, _ := crypto.GenerateKeyPair()
-	_, b, _ := crypto.GenerateKeyPair()
-	_, c, _ := crypto.GenerateKeyPair()
-	_, d, _ := crypto.GenerateKeyPair()
-	_, e, _ := crypto.GenerateKeyPair()
+	_, a, _ := cryptoSign.GenerateKeyPair()
+	_, b, _ := cryptoSign.GenerateKeyPair()
+	_, c, _ := cryptoSign.GenerateKeyPair()
+	_, d, _ := cryptoSign.GenerateKeyPair()
+	_, e, _ := cryptoSign.GenerateKeyPair()
 	new <- a
 	time.Sleep(10 * time.Millisecond) //allow context switch
 	peers := pi.GetPeers()

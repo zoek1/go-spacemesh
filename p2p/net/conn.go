@@ -2,6 +2,7 @@ package net
 
 import (
 	"errors"
+	"github.com/spacemeshos/go-spacemesh/p2p/cryptoSign"
 	"time"
 
 	"fmt"
@@ -36,8 +37,8 @@ type Connection interface {
 	fmt.Stringer
 
 	ID() string
-	RemotePublicKey() crypto.PublicKey
-	SetRemotePublicKey(key crypto.PublicKey)
+	RemotePublicKey() cryptoSign.PublicKey
+	SetRemotePublicKey(key cryptoSign.PublicKey)
 
 	RemoteAddr() net.Addr
 
@@ -56,7 +57,7 @@ type FormattedConnection struct {
 	// metadata for logging / debugging
 	id         string // uuid for logging
 	created    time.Time
-	remotePub  crypto.PublicKey
+	remotePub  cryptoSign.PublicKey
 	remoteAddr net.Addr
 	closeChan  chan struct{}
 	formatter  wire.Formatter // format messages in some way
@@ -80,7 +81,8 @@ type readWriteCloseAddresser interface {
 }
 
 // Create a new connection wrapping a net.Conn with a provided connection manager
-func newConnection(conn readWriteCloseAddresser, netw networker, formatter wire.Formatter, remotePub crypto.PublicKey, log *logging.Logger) *FormattedConnection {
+func newConnection(conn readWriteCloseAddresser, netw networker, formatter wire.Formatter,
+	remotePub cryptoSign.PublicKey, log *logging.Logger) *FormattedConnection {
 
 	// todo parametrize channel size - hard-coded for now
 	connection := &FormattedConnection{
@@ -110,12 +112,12 @@ func (c *FormattedConnection) RemoteAddr() net.Addr {
 }
 
 // SetRemotePublicKey sets the remote peer's public key
-func (c *FormattedConnection) SetRemotePublicKey(key crypto.PublicKey) {
+func (c *FormattedConnection) SetRemotePublicKey(key cryptoSign.PublicKey) {
 	c.remotePub = key
 }
 
 // RemotePublicKey returns the remote peer's public key
-func (c *FormattedConnection) RemotePublicKey() crypto.PublicKey {
+func (c *FormattedConnection) RemotePublicKey() cryptoSign.PublicKey {
 	return c.remotePub
 }
 

@@ -28,7 +28,7 @@ func (its *IntegrationTestSuite) Test_SendingMessage()  {
 	_ = node1.RegisterProtocol(exProto)
 	ch2 := node2.RegisterProtocol(exProto)
 
-	err := node1.SendMessage(node2.LocalNode().Node.String(), exProto, []byte(exMsg))
+	err := node1.SendMessage(node2.LocalNode().Node.PublicKey(), exProto, []byte(exMsg))
 	if err != nil {
 		its.T().Fatal("", err)
 	}

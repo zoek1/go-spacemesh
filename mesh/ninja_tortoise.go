@@ -7,18 +7,14 @@ import (
 
 type Vote [2]int
 type Tally [2]int
-type vote int
-
-const (
-	Support = 1
-	Against = -1
-	Abstain = 0
-)
 
 var ( //correction vectors type
-	correction2 = Vote{1, -1} //implicit +1 explicit -1
-	correction1 = Vote{-1, 1} //implicit -1 explicit  1
-	correction3 = Vote{0, 0}  //implicit  0 explicit  0
+	implicit = Vote{1, -1} //implicit +1 explicit -1
+	explicit = Vote{-1, 1} //implicit -1 explicit  1
+	neutral  = Vote{0, 0}  //implicit  0 explicit  0
+	Support  = [2]int{1, 0}
+	Against  = [2]int{-1, 0}
+	Abstain  = [2]int{0, 0}
 )
 
 func (a Tally) Add(v Vote) Tally {
@@ -90,10 +86,10 @@ type ninjaTortoise struct {
 	tTally             map[*votingPattern]map[*NinjaBlock]Tally //for pattern p and block b count votes for b according to p
 	tVote              map[*votingPattern]map[*NinjaBlock]Vote  // global opinion
 	tLocalVotes        map[*votingPattern]map[*NinjaBlock]Vote
-	tCorrect           map[*NinjaBlock]map[*votingPattern]Vote
+	tCorrect           map[*NinjaBlock]map[*votingPattern]Vote //correction vectors
 }
 
-func (ni ninjaTortoise) GlobalOpinion(p *votingPattern, x *NinjaBlock) vote {
+func (ni ninjaTortoise) GlobalOpinion(p *votingPattern, x *NinjaBlock) [2]int { //todo maybe this can be vote ?
 	v := ni.tTally[p][x]
 	delta := int(p.LayerID - x.Layer())
 	threshold := GlobalThreshold * delta * layerSize
@@ -146,7 +142,7 @@ func (ni ninjaTortoise) UpdatePatternTally(pBase *votingPattern, g *votingPatter
 
 }
 
-func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) {
+func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most recent layer
 	blocksVotimgOnLayer := make(map[LayerID]int)
 	l := i
 	//for j from max(Layer(pBase)+1,i-w) to i
@@ -159,7 +155,7 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) {
 			if p, found = block.BlockVotes[j]; found {
 				ni.tExplicit[block][j] = p
 			} else {
-				p, found = ni.tPatSupport[ni.tEffective[block]][j] //block implicitly votes for layer j
+				p, found = ni.tPatSupport[ni.tEffective[block]][j] //block implicitly votes for layer j //todo where is this updated
 			}
 			if found {
 				ni.tSupport[p] = ni.tSupport[p] + 1 //add to supporting patterns
@@ -187,24 +183,32 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) {
 		ni.tTally[p] = ni.tTally[ni.pBase]
 		for k := ni.pBase.Layer(); j < p.Layer(); k++ {
 			if gK := ni.tGood[k]; gK != nil {
+				ni.UpdateCorrectionVectors(p) //todo ?????? check if this is the correct place to call this
 				ni.UpdatePatternTally(ni.pBase, gK, p)
 			}
 		}
 		var b *NinjaBlock
 		stack := list.New()
-		for b := range ni.tPattern[p] {
+		for b := range ni.tPattern[p] { //todo this is wrong // all blocks that are newer than layer(p)
 			stack.PushFront(b)
 		}
 		for b = stack.Front().Value.(*NinjaBlock); b != nil; {
-			//ni.tTally[p][b] = ni.tTally[p][b].Add(ni.tExplicit[b][j])
-			//push children to bfs queue
-			for bChild := range b.ViewEdges {
-				if b.Layer() > ni.pBase.Layer() { //dont traverse too deep
-					stack.PushBack(bChild)
+			if _, found := ni.tExplicit[b][j]; found {
+				ni.tTally[p][b] = ni.tTally[p][b].Add(explicit)
+				//push children to bfs queue
+				for bChild := range b.ViewEdges {
+					if b.Layer() > ni.pBase.Layer() { //dont traverse too deep
+						stack.PushBack(bChild)
+					}
 				}
 			}
 		}
-		//ni.tVote[p][x]:=ni.GlobalOpinion(p, x)
+		allOlderBlocks := []*NinjaBlock{} //todo all blocks previous to p
+		for _, x := range allOlderBlocks {
+			ni.tVote[p][x] = ni.GlobalOpinion(p, x)
+		}
 	}
 
 }
+
+//todo where is negative support count  ???

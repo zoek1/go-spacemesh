@@ -5,37 +5,34 @@ import (
 	"math"
 )
 
-type Vote [2]int
-type Tally [2]int
+type vec [2]int
 
 var ( //correction vectors type
-	implicit = Vote{1, -1} //implicit +1 explicit -1
-	explicit = Vote{-1, 1} //implicit -1 explicit  1
-	neutral  = Vote{0, 0}  //implicit  0 explicit  0
-	Support  = [2]int{1, 0}
-	Against  = [2]int{-1, 0}
-	Abstain  = [2]int{0, 0}
+
+	//Vote
+	Implicit = vec{1, -1} //Implicit +1 Explicit -1
+	Explicit = vec{-1, 1} //Implicit -1 Explicit  1
+	Neutral  = vec{0, 0}  //Implicit  0 Explicit  0
+
+	//Opinion
+	Support = vec{1, 0}
+	Against = vec{-1, 0}
+	Abstain = vec{0, 0}
 )
 
-func (a Tally) Add(v Vote) Tally {
+func (a vec) Add(v vec) vec {
 	a[0] += v[0]
 	a[1] += v[1]
 	return a
 }
 
-func (a Vote) Add(v Vote) Vote {
-	a[0] += v[0]
-	a[1] += v[1]
-	return a
-}
-
-func (a Vote) Negate() Vote {
+func (a vec) Negate() vec {
 	a[0] = a[0] * -1
 	a[1] = a[1] * -1
 	return a
 }
 
-func (a Vote) Multiplay(x int) Vote {
+func (a vec) Multiplay(x int) vec {
 	a[0] = a[0] * x
 	a[1] = a[1] * x
 	return a
@@ -44,7 +41,7 @@ func (a Vote) Multiplay(x int) Vote {
 type NinjaBlock struct {
 	Id         BlockID
 	LayerIndex LayerID
-	BlockVotes map[LayerID]*votingPattern //explicit voting , implicit votes is derived from the view of the latest explicit voting pattern
+	BlockVotes map[LayerID]*votingPattern //Explicit voting , Implicit votes is derived from the view of the latest Explicit voting pattern
 	ViewEdges  map[BlockID]struct{}       //block view V(b)
 }
 
@@ -73,23 +70,26 @@ func (vp votingPattern) Layer() LayerID {
 
 //todo memory optimizations
 type ninjaTortoise struct {
-	pBase              *votingPattern
-	tGood              map[LayerID]*votingPattern                 // good pattern for layer i
-	tSupport           map[*votingPattern]int                     //for pattern p the number of blocks that support p
-	tEffectiveSupport  map[*votingPattern]int                     //number of blocks that support b
-	tEffective         map[*NinjaBlock]*votingPattern             //explicit voting pattern of latest layer for a block
-	tExplicit          map[*NinjaBlock]map[LayerID]*votingPattern // explict votes from block to layer pattern
-	tIncomplete        map[*votingPattern]bool                    //is pattern complete
-	tPattern           map[*votingPattern][]*NinjaBlock           // set of blocks that comprise pattern p
-	tEffectiveToBlocks map[*votingPattern][]*NinjaBlock
-	tPatSupport        map[*votingPattern]map[LayerID]*votingPattern
-	tTally             map[*votingPattern]map[*NinjaBlock]Tally //for pattern p and block b count votes for b according to p
-	tVote              map[*votingPattern]map[*NinjaBlock]Vote  // global opinion
-	tLocalVotes        map[*votingPattern]map[*NinjaBlock]Vote
-	tCorrect           map[*NinjaBlock]map[*votingPattern]Vote //correction vectors
+	pBase      *votingPattern
+	tGood      map[LayerID]*votingPattern                 // good pattern for layer i
+	tSupport   map[*votingPattern]int                     //for pattern p the number of blocks that support p
+	tEffective map[*NinjaBlock]*votingPattern             //Explicit voting pattern of latest layer for a block
+	tExplicit  map[*NinjaBlock]map[LayerID]*votingPattern // explict votes from block to layer pattern
+	tPattern   map[*votingPattern][]*NinjaBlock           // set of blocks that comprise pattern p
+	tTally     map[*votingPattern]map[*NinjaBlock]vec     //for pattern p and block b count votes for b according to p
+	tVote      map[*votingPattern]map[*NinjaBlock]vec     // global opinion
+
+	tEffectiveToBlocks map[*votingPattern][]*NinjaBlock              //todo no initialization
+	tPatSupport        map[*votingPattern]map[LayerID]*votingPattern //todo no initialization
+
+	tEffectiveSupport map[*votingPattern]int                 //todo unused    //number of blocks that support b
+	tLocalVotes       map[*votingPattern]map[*NinjaBlock]vec //todo unused
+	tIncomplete       map[*votingPattern]bool                //todo unused	  //is pattern complete
+
+	tCorrect map[*NinjaBlock]map[*votingPattern]vec //correction vectors
 }
 
-func (ni ninjaTortoise) GlobalOpinion(p *votingPattern, x *NinjaBlock) [2]int { //todo maybe this can be vote ?
+func (ni ninjaTortoise) GlobalOpinion(p *votingPattern, x *NinjaBlock) vec { //todo maybe this can be vote ?
 	v := ni.tTally[p][x]
 	delta := int(p.LayerID - x.Layer())
 	threshold := GlobalThreshold * delta * layerSize
@@ -121,7 +121,7 @@ func (ni ninjaTortoise) UpdatePatternTally(pBase *votingPattern, g *votingPatter
 	}
 	// bfs this sucker to get all blocks who's effective vote pattern is g and layer id i Pbase<i<p
 	var b *NinjaBlock
-	corr := make(map[*votingPattern]Vote)
+	corr := make(map[*votingPattern]vec)
 	effCount := 0
 	for b = stack.Front().Value.(*NinjaBlock); b != nil; {
 		//corr = corr + TCorrect[B]
@@ -187,28 +187,30 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 				ni.UpdatePatternTally(ni.pBase, gK, p)
 			}
 		}
-		var b *NinjaBlock
-		stack := list.New()
-		for b := range ni.tPattern[p] { //todo this is wrong // all blocks that are newer than layer(p)
-			stack.PushFront(b)
-		}
-		for b = stack.Front().Value.(*NinjaBlock); b != nil; {
-			if _, found := ni.tExplicit[b][j]; found {
-				ni.tTally[p][b] = ni.tTally[p][b].Add(explicit)
-				//push children to bfs queue
-				for bChild := range b.ViewEdges {
-					if b.Layer() > ni.pBase.Layer() { //dont traverse too deep
-						stack.PushBack(bChild)
-					}
-				}
+
+		forEachInView(ni.tPattern[p], ni.pBase.Layer(),
+			func(b *NinjaBlock) {
+				ni.tTally[p][b] = ni.tTally[p][b].Add(Explicit)
+				ni.tVote[p][b] = ni.GlobalOpinion(p, b)
+			})
+
+	}
+}
+
+func forEachInView(blocks []*NinjaBlock, layer LayerID, foo func(*NinjaBlock)) {
+	stack := list.New()
+	for b := range blocks {
+		stack.PushFront(b)
+	}
+	for b := stack.Front().Value.(*NinjaBlock); b != nil; {
+		//push children to bfs queue
+		foo(b)
+		for bChild := range b.ViewEdges {
+			if b.Layer() > layer { //dont traverse too deep
+				stack.PushBack(bChild)
 			}
 		}
-		allOlderBlocks := []*NinjaBlock{} //todo all blocks previous to p
-		for _, x := range allOlderBlocks {
-			ni.tVote[p][x] = ni.GlobalOpinion(p, x)
-		}
 	}
-
 }
 
 //todo where is negative support count  ???

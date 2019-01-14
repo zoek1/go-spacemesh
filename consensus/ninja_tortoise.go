@@ -92,7 +92,7 @@ type ninjaTortoise struct {
 func (ni ninjaTortoise) GlobalOpinion(p *votingPattern, x *NinjaBlock) vec { //todo maybe this can be vote ?
 	v := ni.tTally[p][x]
 	delta := int(p.LayerID - x.Layer())
-	threshold := GlobalThreshold * delta * layerSize
+	threshold := GlobalThreshold * delta * LayerSize
 	if v[0] > threshold {
 		return Support
 	} else if v[1] > threshold {
@@ -188,7 +188,7 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 			}
 		}
 
-		forEachInView(ni.tPattern[p], ni.pBase.Layer(),
+		ForEachInView(ni.tPattern[p], ni.pBase.Layer(),
 			func(b *NinjaBlock) {
 				ni.tTally[p][b] = ni.tTally[p][b].Add(Explicit)
 				ni.tVote[p][b] = ni.GlobalOpinion(p, b)
@@ -197,7 +197,7 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 	}
 }
 
-func forEachInView(blocks []*NinjaBlock, layer LayerID, foo func(*NinjaBlock)) {
+func ForEachInView(blocks []*NinjaBlock, layer LayerID, foo func(*NinjaBlock)) {
 	stack := list.New()
 	for b := range blocks {
 		stack.PushFront(b)

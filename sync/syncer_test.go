@@ -36,17 +36,22 @@ type BlockValidatorMock struct {
 }
 
 func (BlockValidatorMock) ValidateBlock(block *mesh.Block) bool {
-	fmt.Println("validate block ", block.ID(), " ", block)
+	fmt.Println("validate block ", block .ID(), " ", block)
 	return true
 }
 
-func getMesh(id string) mesh.Mesh {
+type MeshValidatorMock struct {}
+
+func (m *MeshValidatorMock)	HandleIncomingLayer(layer *mesh.Layer) {}
+func (m *MeshValidatorMock) HandleLateBlock(bl *mesh.Block) {}
+
+func getMesh(id string) *mesh.Mesh {
 	time := time.Now()
 	bdb := database.NewLevelDbStore("blocks_test_"+id, nil, nil)
 	ldb := database.NewLevelDbStore("layers_test_"+id, nil, nil)
 	cv := database.NewLevelDbStore("contextually_valid_test_"+id, nil, nil)
 	odb := database.NewLevelDbStore("orphans_test_"+id+"_"+time.String(), nil, nil)
-	layers := mesh.NewMesh(ldb, bdb, cv, odb, log.New(id, "", ""))
+	layers := mesh.NewMesh(ldb, bdb, cv, odb, &MeshValidatorMock{},log.New(id, "", ""))
 	return layers
 }
 
@@ -362,12 +367,12 @@ func (sis *syncIntegrationTwoNodes) TestSyncProtocol_TwoNodes() {
 	defer syncObj1.Close()
 	syncObj2 := sis.syncers[1]
 	defer syncObj2.Close()
-	syncObj1.AddLayer(mesh.NewExistingLayer(1, []*mesh.Block{block1, block2}))
-	syncObj1.AddLayer(mesh.NewExistingLayer(2, []*mesh.Block{block3, block4}))
-	syncObj1.AddLayer(mesh.NewExistingLayer(3, []*mesh.Block{block5, block6}))
-	syncObj1.AddLayer(mesh.NewExistingLayer(4, []*mesh.Block{block7, block8}))
-	syncObj1.AddLayer(mesh.NewExistingLayer(5, []*mesh.Block{block9, block10}))
 
+	syncObj1.AddLayer(mesh.NewExistingLayer(0, []*mesh.Block{block1, block2}))
+	syncObj1.AddLayer(mesh.NewExistingLayer(1, []*mesh.Block{block3, block4}))
+	syncObj1.AddLayer(mesh.NewExistingLayer(2, []*mesh.Block{block5, block6}))
+	syncObj1.AddLayer(mesh.NewExistingLayer(3, []*mesh.Block{block7, block8}))
+	syncObj1.AddLayer(mesh.NewExistingLayer(4, []*mesh.Block{block9, block10}))
 	timeout := time.After(60 * time.Second)
 	syncObj2.SetLatestLayer(5)
 	syncObj2.Start()
@@ -443,6 +448,7 @@ func (sis *syncIntegrationMultipleNodes) TestSyncProtocol_MultipleNodes() {
 	syncObj1.AddLayer(mesh.NewExistingLayer(3, []*mesh.Block{block5, block6}))
 	syncObj1.AddLayer(mesh.NewExistingLayer(4, []*mesh.Block{block7, block8}))
 	syncObj1.AddLayer(mesh.NewExistingLayer(5, []*mesh.Block{block9, block10}))
+
 	syncObj3.AddLayer(mesh.NewExistingLayer(1, []*mesh.Block{block1, block2}))
 	syncObj3.AddLayer(mesh.NewExistingLayer(2, []*mesh.Block{block3, block4}))
 	syncObj3.AddLayer(mesh.NewExistingLayer(3, []*mesh.Block{block5, block6}))

@@ -1,25 +1,50 @@
 package mesh
 
 import (
+	"bytes"
+	"fmt"
+	"github.com/davecgh/go-xdr/xdr2"
 	"github.com/google/uuid"
+	"github.com/spacemeshos/go-spacemesh/common"
+	"io"
 	"time"
 )
 
 type BlockID uint32
 type LayerID uint32
 
-var layerCounter LayerID = 0
-
 type Block struct {
-	Id         BlockID
-	LayerIndex LayerID
-	Data       []byte
-	Coin       bool
-	Timestamp  time.Time
-	ProVotes   uint64
-	ConVotes   uint64
-	BlockVotes map[BlockID]bool
-	ViewEdges  map[BlockID]struct{}
+	Id          BlockID
+	LayerIndex  LayerID
+	Data        []byte
+	Coin        bool
+	Timestamp   time.Time
+	Txs         []SerializableTransaction
+	BlockVotes 	[]BlockID
+	ViewEdges   []BlockID
+}
+
+type SerializableTransaction struct{
+	AccountNonce 	uint64
+	Price			[]byte
+	GasLimit		uint64
+	Recipient 		*common.Address
+	Origin			common.Address //todo: remove this, should be calculated from sig.
+	Amount       	[]byte
+	Payload      	[]byte
+}
+
+func NewBlock(coin bool, data []byte, ts time.Time, layerId LayerID) *Block {
+	b := Block{
+		Id:         BlockID(uuid.New().ID()),
+		LayerIndex: layerId,
+		BlockVotes: make([]BlockID,0,10),
+		ViewEdges:  make([]BlockID,0,10),
+		Timestamp:  ts,
+		Data:       data,
+		Coin:       coin,
+	}
+	return &b
 }
 
 func (b Block) ID() BlockID {
@@ -30,30 +55,14 @@ func (b Block) Layer() LayerID {
 	return b.LayerIndex
 }
 
-func NewExistingBlock(id BlockID, layerIndex LayerID, data []byte) *Block {
-	b := Block{
-		Id:         BlockID(id),
-		BlockVotes: make(map[BlockID]bool),
-		ViewEdges:  make(map[BlockID]struct{}),
-		LayerIndex: LayerID(layerIndex),
-		Data:       data,
-	}
-	return &b
+func (b *Block) AddVote(id BlockID){
+	//todo: do this in a sorted manner
+	b.BlockVotes = append(b.BlockVotes, id)
 }
 
-func NewBlock(coin bool, data []byte, ts time.Time, layerId LayerID) *Block {
-	b := Block{
-		Id:         BlockID(uuid.New().ID()),
-		LayerIndex: layerId,
-		BlockVotes: make(map[BlockID]bool),
-		ViewEdges:  make(map[BlockID]struct{}),
-		Timestamp:  ts,
-		Data:       data,
-		Coin:       coin,
-		ProVotes:   0,
-		ConVotes:   0,
-	}
-	return &b
+func (b *Block) AddView(id BlockID){
+	//todo: do this in a sorted manner
+	b.ViewEdges = append(b.ViewEdges, id)
 }
 
 type Layer struct {
@@ -78,13 +87,8 @@ func (l *Layer) AddBlock(block *Block) {
 	l.blocks = append(l.blocks, block)
 }
 
-func NewLayer() *Layer {
-	l := Layer{
-		blocks: make([]*Block, 0),
-		index:  layerCounter,
-	}
-	layerCounter++
-	return &l
+func (l *Layer) SetBlocks(blocks []*Block){
+	l.blocks = blocks
 }
 
 func NewExistingLayer(idx LayerID, blocks []*Block) *Layer {
@@ -94,3 +98,40 @@ func NewExistingLayer(idx LayerID, blocks []*Block) *Layer {
 	}
 	return &l
 }
+
+func BlockAsBytes(block Block) ([]byte, error) {
+	var w bytes.Buffer
+	if _, err := xdr.Marshal(&w, &block); err != nil {
+		return nil, fmt.Errorf("error marshalling block ids %v", err)
+	}
+	return w.Bytes(), nil
+}
+
+func BytesAsBlock(buf io.Reader) (Block, error){
+	b := Block{}
+	_, err := xdr.Unmarshal(buf, &b)
+	if err != nil {
+		return b,err
+	}
+	return b, nil
+}
+
+func NewExistingBlock(id BlockID, layerIndex LayerID, data []byte) *Block {
+	b := Block{
+		Id:         BlockID(id),
+		BlockVotes: make([]BlockID,0,10),
+		ViewEdges:  make([]BlockID,0,10),
+		LayerIndex: LayerID(layerIndex),
+		Data:       data,
+	}
+	return &b
+}
+
+func NewLayer(layerIndex LayerID) *Layer {
+	return &Layer{
+		index: layerIndex,
+		blocks:make([]*Block, 0, 10),
+	}
+}
+
+

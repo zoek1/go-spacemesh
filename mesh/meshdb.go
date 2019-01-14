@@ -1,6 +1,7 @@
 package mesh
 
 import (
+	"bytes"
 	"errors"
 	"github.com/spacemeshos/go-spacemesh/database"
 	"github.com/spacemeshos/go-spacemesh/log"
@@ -25,7 +26,7 @@ type meshDB struct {
 	lhMutex            sync.Mutex
 }
 
-func NewMeshDb(layers database.DB, blocks database.DB, validity database.DB, orphans database.DB) *meshDB {
+func NewMeshDB(layers database.DB, blocks database.DB, validity database.DB, orphans database.DB) *meshDB {
 	ll := &meshDB{
 		blocks:             blocks,
 		layers:             layers,
@@ -59,7 +60,10 @@ func (m *meshDB) getLayer(index LayerID) (*Layer, error) {
 		return nil, errors.New("could not get all blocks from database ")
 	}
 
-	return &Layer{index: LayerID(index), blocks: blocks}, nil
+	l := NewLayer(LayerID(index))
+	l.SetBlocks(blocks)
+
+	return l, nil
 }
 
 func (m *meshDB) addBlock(block *Block) error {
@@ -79,7 +83,11 @@ func (m *meshDB) getBlock(id BlockID) (*Block, error) {
 	if err != nil {
 		return nil, errors.New("could not find block in database")
 	}
-	return bytesToBlock(b)
+	blk, err := BytesAsBlock(bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	return &blk, nil
 }
 
 func (m *meshDB) getContextualValidity(id BlockID) (bool, error) {
@@ -154,24 +162,24 @@ func (m *meshDB) getLayerBlocks(ids map[BlockID]bool) ([]*Block, error) {
 func (m *meshDB) handleLayerBlocks(ll *layerHandler) {
 	for {
 		select {
-		case block := <-ll.ch:
+		case bl := <-ll.ch:
 			atomic.AddInt32(&ll.pendingCount, -1)
-			bytes, err := blockAsBytes(*block)
+			bytes, err := BlockAsBytes(*bl)
 			if err != nil {
-				log.Error("could not encode block")
+				log.Error("could not encode bl")
 				continue
 			}
-			if b, err := m.blocks.Get(block.ID().ToBytes()); err == nil && b != nil {
-				log.Error("block ", block, " already in database ")
-				continue
-			}
-
-			if err := m.blocks.Put(block.ID().ToBytes(), bytes); err != nil {
-				log.Error("could not add block to ", block, " database ", err)
+			if b, err := m.blocks.Get(bl.ID().ToBytes()); err == nil && b != nil {
+				log.Error("bl ", bl, " already in database ")
 				continue
 			}
 
-			m.updateLayerIds(block)
+			if err := m.blocks.Put(bl.ID().ToBytes(), bytes); err != nil {
+				log.Error("could not add bl to ", bl, " database ", err)
+				continue
+			}
+
+			m.updateLayerIds(bl)
 			m.tryDeleteHandler(ll) //try delete handler when done to avoid leak
 		default:
 			time.Sleep(50 * time.Millisecond)

@@ -1,30 +1,33 @@
 package sync
 
 import (
+	"bytes"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/mesh"
 	"github.com/spacemeshos/go-spacemesh/p2p/server"
+	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"sync/atomic"
 	"time"
 )
 
 type MessageServer server.MessageServer
 
-const blockProtocol = "/blocks/1.0/"
+const BlockProtocol = "/blocks/1.0/"
+const NewBlock = "newBlock"
 
 type BlockListener struct {
 	*server.MessageServer
 	Peers
-	mesh.Mesh
+	*mesh.Mesh
 	BlockValidator
 	log.Log
 	bufferSize   int
 	semaphore    chan struct{}
 	unknownQueue chan mesh.BlockID //todo consider benefits of changing to stack
+	receivedGossipBlocks chan service.Message
 	startLock    uint32
 	timeout      time.Duration
-	exit         chan struct {
-	}
+	exit         chan struct {}
 }
 
 func (bl *BlockListener) Close() {
@@ -34,6 +37,7 @@ func (bl *BlockListener) Close() {
 func (bl *BlockListener) Start() {
 	if atomic.CompareAndSwapUint32(&bl.startLock, 0, 1) {
 		go bl.run()
+		//go bl.ListenToGossipBlocks()
 	}
 }
 
@@ -41,18 +45,34 @@ func (bl *BlockListener) OnNewBlock(b *mesh.Block) {
 	bl.addUnknownToQueue(b)
 }
 
-func NewBlockListener(net server.Service, bv BlockValidator, layers mesh.Mesh, timeout time.Duration, concurrency int, logger log.Log) *BlockListener {
+func NewBlockListener(net server.Service, bv BlockValidator, layers *mesh.Mesh, timeout time.Duration, concurrency int, logger log.Log) *BlockListener {
 	bl := BlockListener{
 		BlockValidator: bv,
 		Mesh:           layers,
 		Peers:          NewPeers(net),
-		MessageServer:  server.NewMsgServer(net, blockProtocol, timeout, logger),
+		MessageServer:  server.NewMsgServer(net, BlockProtocol, timeout, logger),
 		Log:            logger,
 		semaphore:      make(chan struct{}, concurrency),
 		unknownQueue:   make(chan mesh.BlockID, 200), //todo tune buffer size + get buffer from config
-		exit:           make(chan struct{})}
-	bl.RegisterMsgHandler(BLOCK, newBlockRequestHandler(layers, logger))
+		exit:           make(chan struct{}),
+		receivedGossipBlocks: net.RegisterProtocol(NewBlock),
+	}
+	bl.RegisterMsgHandler(BLOCK , newBlockRequestHandler(layers, logger))
+
+
 	return &bl
+}
+
+func (bl *BlockListener) ListenToGossipBlocks(){
+	for{
+		select {
+			case data := <- bl.receivedGossipBlocks:
+				_, err := mesh.BytesAsBlock(bytes.NewReader(data.Bytes()))
+				if err != nil {
+					log.Error("received invalid block from sender %v", data.Sender())
+				}
+		}
+	}
 }
 
 func (bl *BlockListener) run() {
@@ -87,7 +107,7 @@ func (bl *BlockListener) FetchBlock(id mesh.BlockID) {
 }
 
 func (bl *BlockListener) addUnknownToQueue(b *mesh.Block) {
-	for block := range b.ViewEdges {
+	for _, block := range b.ViewEdges {
 		//if unknown block
 		if _, err := bl.GetBlock(block); err != nil {
 			bl.unknownQueue <- block

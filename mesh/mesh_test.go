@@ -8,13 +8,18 @@ import (
 	"time"
 )
 
-func getMesh(id string) Mesh {
+type MeshValidatorMock struct {}
+
+func (m *MeshValidatorMock)	HandleIncomingLayer(layer *Layer) {}
+func (m *MeshValidatorMock) HandleLateBlock(bl *Block) {}
+
+func getMesh(id string) *Mesh {
 	time := time.Now()
 	bdb := database.NewLevelDbStore("blocks_test_"+id+"_"+time.String(), nil, nil)
 	ldb := database.NewLevelDbStore("layers_test_"+id+"_"+time.String(), nil, nil)
 	cdb := database.NewLevelDbStore("contextual_test_"+id+"_"+time.String(), nil, nil)
 	odb := database.NewLevelDbStore("orphans_test_"+id+"_"+time.String(), nil, nil)
-	layers := NewMesh(ldb, bdb, cdb, odb, log.New(id, "", ""))
+	layers := NewMesh(ldb, bdb, cdb, odb, &MeshValidatorMock{},log.New(id, "", ""))
 	return layers
 }
 
@@ -124,10 +129,10 @@ func TestLayers_OrphanBlocks(t *testing.T) {
 	block3 := NewBlock(true, nil, time.Now(), 2)
 	block4 := NewBlock(true, nil, time.Now(), 2)
 	block5 := NewBlock(true, nil, time.Now(), 3)
-	block5.ViewEdges[block1.ID()] = struct{}{}
-	block5.ViewEdges[block2.ID()] = struct{}{}
-	block5.ViewEdges[block3.ID()] = struct{}{}
-	block5.ViewEdges[block4.ID()] = struct{}{}
+	block5.AddView(block1.ID())
+	block5.AddView(block2.ID())
+	block5.AddView(block3.ID())
+	block5.AddView(block4.ID())
 	layers.AddBlock(block1)
 	layers.AddBlock(block2)
 	layers.AddBlock(block3)

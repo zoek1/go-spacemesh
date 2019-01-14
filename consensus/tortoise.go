@@ -1,9 +1,10 @@
-package mesh
+package consensus
 
 import (
 	"fmt"
 	"github.com/golang-collections/go-datastructures/bitarray"
 	"github.com/spacemeshos/go-spacemesh/log"
+	"github.com/spacemeshos/go-spacemesh/mesh"
 )
 
 type LayerQueue chan *Layer
@@ -16,7 +17,7 @@ type BlockPosition struct {
 
 type Algorithm struct {
 	block2Id          map[BlockID]uint32
-	allBlocks         map[BlockID]*Block
+	allBlocks         map[BlockID]*TortoiseBlock
 	layerQueue        LayerQueue
 	idQueue           NewIdQueue
 	posVotes          []bitarray.BitArray
@@ -32,7 +33,7 @@ func NewAlgorithm(layerSize uint32, cachedLayers uint32) Algorithm {
 	totBlocks := layerSize * cachedLayers
 	trtl := Algorithm{
 		block2Id:          make(map[BlockID]uint32),
-		allBlocks:         make(map[BlockID]*Block),
+		allBlocks:         make(map[BlockID]*TortoiseBlock),
 		layerQueue:        make(LayerQueue, cachedLayers+1),
 		idQueue:           make(NewIdQueue, layerSize),
 		remainingBlockIds: totBlocks,
@@ -54,7 +55,7 @@ func (alg *Algorithm) LayerVotingAvg() uint64 {
 	return 30
 }
 
-func (alg *Algorithm) IsTortoiseValid(originBlock *Block, targetBlock BlockID, targetBlockIdx uint64, visibleBlocks bitarray.BitArray) bool {
+func (alg *Algorithm) IsTortoiseValid(originBlock *TortoiseBlock, targetBlock BlockID, targetBlockIdx uint64, visibleBlocks bitarray.BitArray) bool {
 	voteFor, voteAgainst := alg.countTotalVotesForBlock(targetBlockIdx, visibleBlocks)
 
 	if voteFor > alg.GlobalVotingAvg() {
@@ -83,11 +84,11 @@ func (alg *Algorithm) getLayerById(layerId LayerID) (*Layer, error) {
 	return alg.layers[layerId], nil
 }
 
-func (alg *Algorithm) CountVotesInLastLayer(block *Block) (uint64, uint64) {
+func (alg *Algorithm) CountVotesInLastLayer(block *TortoiseBlock) (uint64, uint64) {
 	return block.ConVotes, block.ProVotes
 }
 
-func (alg *Algorithm) createBlockVotingMap(origin *Block) (*bitarray.BitArray, *bitarray.BitArray) {
+func (alg *Algorithm) createBlockVotingMap(origin *TortoiseBlock) (*bitarray.BitArray, *bitarray.BitArray) {
 	blockMap := bitarray.NewBitArray(uint64(alg.totalBlocks))
 	visibilityMap := bitarray.NewBitArray(uint64(alg.totalBlocks))
 	// Count direct voters
@@ -171,7 +172,7 @@ func (alg *Algorithm) recycleLayer(l *Layer) {
 	delete(alg.layers, l.index)
 }
 
-func (alg *Algorithm) assignIdForBlock(blk *Block) uint32 {
+func (alg *Algorithm) assignIdForBlock(blk *TortoiseBlock) uint32 {
 	//todo: should this section be protected by a mutex?
 	alg.allBlocks[blk.Id] = blk
 	if len(alg.idQueue) > 0 {
@@ -193,7 +194,8 @@ func (alg *Algorithm) assignIdForBlock(blk *Block) uint32 {
 
 }
 
-func (alg *Algorithm) HandleIncomingLayer(l *Layer) {
+func (alg *Algorithm) HandleIncomingLayer(ll *mesh.Layer) {
+	l := FromLayerToTortoiseLayer(ll)
 	alg.layers[l.index] = l
 	alg.layerQueue <- l
 	if len(alg.layerQueue) >= int(alg.cachedLayers) {
@@ -209,6 +211,6 @@ func (alg *Algorithm) HandleIncomingLayer(l *Layer) {
 	}
 }
 
-func (alg *Algorithm) HandleLateBlock(b *Block) {
+func (alg *Algorithm) HandleLateBlock(b *TortoiseBlock) {
 	log.Info("received block with layer Id %v block id: %v ", b.Layer(), b.ID())
 }

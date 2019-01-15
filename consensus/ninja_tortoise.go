@@ -11,8 +11,8 @@ var ( //correction vectors type
 
 	//Vote
 	Implicit = vec{1, -1} //Implicit +1 Explicit -1
-	Explicit = vec{-1, 1} //Implicit -1 Explicit  1
-	Neutral  = vec{0, 0}  //Implicit  0 Explicit  0
+	Explicit = vec{-1, 1} //Implicit -1 Explicit  1	//todo unused
+	Neutral  = vec{0, 0}  //Implicit  0 Explicit  0 //todo unused
 
 	//Opinion
 	Support = vec{1, 0}
@@ -191,7 +191,7 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 		ForEachInView(ni.tPattern[p], ni.pBase.Layer(),
 			func(b *NinjaBlock) {
 				ni.tTally[p][b] = ni.tTally[p][b].Add(Explicit)
-				ni.tVote[p][b] = ni.GlobalOpinion(p, b)
+				ni.tVote[p][b] = ni.GlobalOpinion(p, b) //todo not sure if this is blocks in p's view or all blocks cccccc to p
 			})
 
 	}

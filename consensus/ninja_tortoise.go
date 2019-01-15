@@ -79,17 +79,18 @@ type ninjaTortoise struct {
 	tTally     map[*votingPattern]map[*NinjaBlock]vec     //for pattern p and block b count votes for b according to p
 	tVote      map[*votingPattern]map[*NinjaBlock]vec     // global opinion
 
-	tEffectiveToBlocks map[*votingPattern][]*NinjaBlock              //todo no initialization
-	tPatSupport        map[*votingPattern]map[LayerID]*votingPattern //todo no initialization
+	tEffectiveToBlocks map[*votingPattern][]*NinjaBlock              //todo no initialization need to do explicitly at start of update tables ?
+	tPatSupport        map[*votingPattern]map[LayerID]*votingPattern //todo no initialization need to do explicitly at start of update tables ?
 
+	//todo is this for the other tortoise ???
 	tEffectiveSupport map[*votingPattern]int                 //todo unused    //number of blocks that support b
 	tLocalVotes       map[*votingPattern]map[*NinjaBlock]vec //todo unused
-	tIncomplete       map[*votingPattern]bool                //todo unused	  //is pattern complete
 
-	tCorrect map[*NinjaBlock]map[*votingPattern]vec //correction vectors
+	tComplete map[*votingPattern]bool                //todo how do we initialize this ?
+	tCorrect  map[*NinjaBlock]map[*votingPattern]vec //correction vectors
 }
 
-func (ni ninjaTortoise) GlobalOpinion(p *votingPattern, x *NinjaBlock) vec { //todo maybe this can be vote ?
+func (ni ninjaTortoise) GlobalOpinion(p *votingPattern, x *NinjaBlock) vec {
 	v := ni.tTally[p][x]
 	delta := int(p.LayerID - x.Layer())
 	threshold := GlobalThreshold * delta * LayerSize
@@ -155,7 +156,7 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 			if p, found = block.BlockVotes[j]; found {
 				ni.tExplicit[block][j] = p
 			} else {
-				p, found = ni.tPatSupport[ni.tEffective[block]][j] //block implicitly votes for layer j //todo where is this updated
+				p, found = ni.tPatSupport[ni.tEffective[block]][j] //block implicitly votes for layer j
 			}
 			if found {
 				ni.tSupport[p] = ni.tSupport[p] + 1 //add to supporting patterns
@@ -177,7 +178,7 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 			}
 		}
 	}
-	//iterate from l to i where l is the minimal good pattern
+	//iterate from l to i where l is the minimal newly good pattern
 	for j := l; j < i; j++ {
 		p := ni.tGood[j]
 		ni.tTally[p] = ni.tTally[ni.pBase]
@@ -190,9 +191,21 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 
 		ForEachInView(ni.tPattern[p], ni.pBase.Layer(),
 			func(b *NinjaBlock) {
-				ni.tTally[p][b] = ni.tTally[p][b].Add(Explicit)
-				ni.tVote[p][b] = ni.GlobalOpinion(p, b) //todo not sure if this is blocks in p's view or all blocks cccccc to p
+				if ni.pBase == ni.tExplicit[b][ni.pBase.Layer()] {
+					ni.tTally[p][b] = ni.tTally[p][b].Add(Explicit) //todo check if this is true
+				} else if ni.tExplicit[b][p.Layer()] != nil {
+					ni.tTally[p][b] = ni.tTally[p][b].Add(Implicit) //todo check if this is true
+				} else {
+					ni.tTally[p][b] = ni.tTally[p][b].Add(Abstain) //todo check if this is true
+				}
+
+				ni.tVote[p][b] = ni.GlobalOpinion(p, b) //todo not sure if this is blocks in p's view or all blocks before to p
 			})
+
+		//todo check if p is complete id so pBase = p, this is not in the article
+		if ni.tComplete[p] {
+			ni.pBase = p
+		}
 
 	}
 }
@@ -214,3 +227,4 @@ func ForEachInView(blocks []*NinjaBlock, layer LayerID, foo func(*NinjaBlock)) {
 }
 
 //todo where is negative support count  ???
+//todo block wights to prevent attacks yuval's question

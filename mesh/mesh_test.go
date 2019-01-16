@@ -8,10 +8,11 @@ import (
 	"time"
 )
 
-type MeshValidatorMock struct {}
+type MeshValidatorMock struct{}
 
-func (m *MeshValidatorMock)	HandleIncomingLayer(layer *Layer) {}
-func (m *MeshValidatorMock) HandleLateBlock(bl *Block) {}
+func (m *MeshValidatorMock) HandleIncomingLayer(layer *Layer)   {}
+func (m *MeshValidatorMock) HandleLateBlock(bl *Block)          {}
+func (m *MeshValidatorMock) ContextualValidity(bl BlockID) bool { return true }
 
 func getMesh(id string) *Mesh {
 	time := time.Now()
@@ -19,7 +20,7 @@ func getMesh(id string) *Mesh {
 	ldb := database.NewLevelDbStore("layers_test_"+id+"_"+time.String(), nil, nil)
 	cdb := database.NewLevelDbStore("contextual_test_"+id+"_"+time.String(), nil, nil)
 	odb := database.NewLevelDbStore("orphans_test_"+id+"_"+time.String(), nil, nil)
-	layers := NewMesh(ldb, bdb, cdb, odb, &MeshValidatorMock{},log.New(id, "", ""))
+	layers := NewMesh(ldb, bdb, cdb, odb, &MeshValidatorMock{}, log.New(id, "", ""))
 	return layers
 }
 

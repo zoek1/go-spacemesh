@@ -36,14 +36,15 @@ type BlockValidatorMock struct {
 }
 
 func (BlockValidatorMock) ValidateBlock(block *mesh.Block) bool {
-	fmt.Println("validate block ", block .ID(), " ", block)
+	fmt.Println("validate block ", block.ID(), " ", block)
 	return true
 }
 
-type MeshValidatorMock struct {}
+type MeshValidatorMock struct{}
 
-func (m *MeshValidatorMock)	HandleIncomingLayer(layer *mesh.Layer) {}
-func (m *MeshValidatorMock) HandleLateBlock(bl *mesh.Block) {}
+func (m *MeshValidatorMock) HandleIncomingLayer(layer *mesh.Layer)   {}
+func (m *MeshValidatorMock) HandleLateBlock(bl *mesh.Block)          {}
+func (m *MeshValidatorMock) ContextualValidity(bl mesh.BlockID) bool { return true }
 
 func getMesh(id string) *mesh.Mesh {
 	time := time.Now()
@@ -51,7 +52,7 @@ func getMesh(id string) *mesh.Mesh {
 	ldb := database.NewLevelDbStore("layers_test_"+id, nil, nil)
 	cv := database.NewLevelDbStore("contextually_valid_test_"+id, nil, nil)
 	odb := database.NewLevelDbStore("orphans_test_"+id+"_"+time.String(), nil, nil)
-	layers := mesh.NewMesh(ldb, bdb, cv, odb, &MeshValidatorMock{},log.New(id, "", ""))
+	layers := mesh.NewMesh(ldb, bdb, cv, odb, &MeshValidatorMock{}, log.New(id, "", ""))
 	return layers
 }
 

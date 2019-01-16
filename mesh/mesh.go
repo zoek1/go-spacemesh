@@ -28,36 +28,36 @@ var FALSE = []byte{0}
 	Close()
 }*/
 
-type MeshValidator interface{
+type MeshValidator interface {
 	HandleIncomingLayer(layer *Layer)
 	HandleLateBlock(bl *Block)
+	ContextualValidity(bl BlockID) bool
 }
 
 type Mesh struct {
 	log.Log
 	*meshDB
+	MeshValidator
 	localLayer  uint32
 	latestLayer uint32
 	lMutex      sync.RWMutex
 	lkMutex     sync.RWMutex
 	lcMutex     sync.RWMutex
-	tortoise    MeshValidator
 	orphMutex   sync.RWMutex
 }
 
-func NewMesh(layers , blocks, validity, orphans database.DB, mesh MeshValidator,logger log.Log) *Mesh {
+func NewMesh(layers, blocks, validity, orphans database.DB, mesh MeshValidator, logger log.Log) *Mesh {
 	//todo add boot from disk
 	ll := &Mesh{
-		Log:      logger,
-		tortoise: mesh,
-		meshDB:   NewMeshDB(layers, blocks, validity, orphans),
+		Log:           logger,
+		MeshValidator: mesh,
+		meshDB:        NewMeshDB(layers, blocks, validity, orphans),
 	}
 	return ll
 }
 
 func (m *Mesh) IsContexuallyValid(b BlockID) bool {
-	//todo implement
-	return true
+	return m.MeshValidator.ContextualValidity(b)
 }
 
 func (m *Mesh) LocalLayer() uint32 {
@@ -94,7 +94,7 @@ func (m *Mesh) AddLayer(layer *Layer) error {
 	}
 
 	m.addLayer(layer)
-	m.tortoise.HandleIncomingLayer(layer)
+	m.MeshValidator.HandleIncomingLayer(layer)
 	atomic.AddUint32(&m.localLayer, 1)
 	m.SetLatestLayer(uint32(layer.Index()))
 	return nil
@@ -112,7 +112,6 @@ func (m *Mesh) GetLayer(i LayerID) (*Layer, error) {
 	return m.getLayer(i)
 }
 
-
 func (m *Mesh) AddBlock(block *Block) error {
 	log.Debug("add block ", block.ID())
 	if err := m.addBlock(block); err != nil {
@@ -122,10 +121,9 @@ func (m *Mesh) AddBlock(block *Block) error {
 	m.SetLatestLayer(uint32(block.Layer()))
 	//new block add to orphans
 	m.handleOrphanBlocks(block)
-	m.tortoise.HandleLateBlock(block) //todo should be thread safe?
+	m.MeshValidator.HandleLateBlock(block) //todo should be thread safe?
 	return nil
 }
-
 
 //todo better thread safety
 func (m *Mesh) handleOrphanBlocks(block *Block) {

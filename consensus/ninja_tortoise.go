@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"container/list"
+	"github.com/spacemeshos/go-spacemesh/mesh"
 	"math"
 )
 
@@ -39,18 +40,13 @@ func (a vec) Multiplay(x int) vec {
 }
 
 type NinjaBlock struct {
-	Id         BlockID
-	LayerIndex LayerID
-	BlockVotes map[LayerID]*votingPattern //Explicit voting , Implicit votes is derived from the view of the latest Explicit voting pattern
-	ViewEdges  map[BlockID]struct{}       //block view V(b)
+	*mesh.Block
+	BlockVotes map[mesh.LayerID]*votingPattern //Explicit voting , Implicit votes is derived from the view of the latest Explicit voting pattern
+	ViewEdges  map[BlockID]struct{}            //block view V(b)
 }
 
-func (b *NinjaBlock) ID() BlockID {
-	return b.Id
-}
-
-func (b *NinjaBlock) Layer() LayerID {
-	return b.LayerIndex
+func NewNinjaBlock(b *mesh.Block) *NinjaBlock {
+	return nil
 }
 
 const ( //Threshold
@@ -61,33 +57,30 @@ const ( //Threshold
 
 type votingPattern struct {
 	id []byte
-	LayerID
+	mesh.LayerID
 }
 
-func (vp votingPattern) Layer() LayerID {
+func (vp votingPattern) Layer() mesh.LayerID {
 	return vp.LayerID
 }
 
 //todo memory optimizations
 type ninjaTortoise struct {
+	mesh.Mesh
 	pBase      *votingPattern
-	tGood      map[LayerID]*votingPattern                 // good pattern for layer i
-	tSupport   map[*votingPattern]int                     //for pattern p the number of blocks that support p
-	tEffective map[*NinjaBlock]*votingPattern             //Explicit voting pattern of latest layer for a block
-	tExplicit  map[*NinjaBlock]map[LayerID]*votingPattern // explict votes from block to layer pattern
-	tPattern   map[*votingPattern][]*NinjaBlock           // set of blocks that comprise pattern p
-	tTally     map[*votingPattern]map[*NinjaBlock]vec     //for pattern p and block b count votes for b according to p
-	tVote      map[*votingPattern]map[*NinjaBlock]vec     // global opinion
+	tGood      map[mesh.LayerID]*votingPattern        // good pattern for layer i
+	tSupport   map[*votingPattern]int                 //for pattern p the number of blocks that support p
+	tEffective map[*NinjaBlock]*votingPattern         //Explicit voting pattern of latest layer for a block
+	tPattern   map[*votingPattern][]*NinjaBlock       // set of blocks that comprise pattern p
+	tVote      map[*votingPattern]map[*NinjaBlock]vec // global opinion
 
-	tEffectiveToBlocks map[*votingPattern][]*NinjaBlock              //todo no initialization need to do explicitly at start of update tables ?
-	tPatSupport        map[*votingPattern]map[LayerID]*votingPattern //todo no initialization need to do explicitly at start of update tables ?
+	tTally    map[*votingPattern]map[*NinjaBlock]vec          //for pattern p and block b count votes for b according to p
+	tExplicit map[*NinjaBlock]map[mesh.LayerID]*votingPattern // explict votes from block to layer pattern
 
-	//todo is this for the other tortoise ???
-	tEffectiveSupport map[*votingPattern]int                 //todo unused    //number of blocks that support b
-	tLocalVotes       map[*votingPattern]map[*NinjaBlock]vec //todo unused
-
-	tComplete map[*votingPattern]bool                //todo how do we initialize this ?
-	tCorrect  map[*NinjaBlock]map[*votingPattern]vec //correction vectors
+	tComplete          map[*votingPattern]bool                            //todo no initialization need to do explicitly at end of update tables ?
+	tEffectiveToBlocks map[*votingPattern][]*NinjaBlock                   //todo no initialization need to do explicitly at start of update tables ?
+	tPatSupport        map[*votingPattern]map[mesh.LayerID]*votingPattern //todo no initialization need to do explicitly at start of update tables ?
+	tCorrect           map[*NinjaBlock]map[*votingPattern]vec             //correction vectors
 }
 
 func (ni ninjaTortoise) GlobalOpinion(p *votingPattern, x *NinjaBlock) vec {
@@ -143,11 +136,11 @@ func (ni ninjaTortoise) UpdatePatternTally(pBase *votingPattern, g *votingPatter
 
 }
 
-func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most recent layer
-	blocksVotimgOnLayer := make(map[LayerID]int)
+func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i mesh.LayerID) { //i most recent layer
+	blocksVotimgOnLayer := make(map[mesh.LayerID]int)
 	l := i
 	//for j from max(Layer(pBase)+1,i-w) to i
-	for j := LayerID(math.Max(float64(ni.pBase.Layer()+1), float64(i-100))); j < i; j++ {
+	for j := mesh.LayerID(math.Max(float64(ni.pBase.Layer()+1), float64(i-100))); j < i; j++ {
 		sUpdated := map[*votingPattern]struct{}{}
 		for _, block := range b {
 			var p *votingPattern
@@ -184,25 +177,27 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 		ni.tTally[p] = ni.tTally[ni.pBase]
 		for k := ni.pBase.Layer(); j < p.Layer(); k++ {
 			if gK := ni.tGood[k]; gK != nil {
-				ni.UpdateCorrectionVectors(p) //todo ?????? check if this is the correct place to call this
 				ni.UpdatePatternTally(ni.pBase, gK, p)
 			}
 		}
 
-		ForEachInView(ni.tPattern[p], ni.pBase.Layer(),
-			func(b *NinjaBlock) {
-				if ni.pBase == ni.tExplicit[b][ni.pBase.Layer()] {
-					ni.tTally[p][b] = ni.tTally[p][b].Add(Explicit) //todo check if this is true
-				} else if ni.tExplicit[b][p.Layer()] != nil {
-					ni.tTally[p][b] = ni.tTally[p][b].Add(Implicit) //todo check if this is true
-				} else {
-					ni.tTally[p][b] = ni.tTally[p][b].Add(Abstain) //todo check if this is true
-				}
+		ni.forBlockInView(ni.tPattern[p], ni.pBase.Layer(), func(b *NinjaBlock) {
+			if ni.pBase == ni.tExplicit[b][ni.pBase.Layer()] {
+				ni.tTally[p][b] = ni.tTally[p][b].Add(Explicit) //todo check if this is true
+			} else if ni.tExplicit[b][p.Layer()] != nil {
+				ni.tTally[p][b] = ni.tTally[p][b].Add(Implicit) //todo check if this is true
+			} else {
+				ni.tTally[p][b] = ni.tTally[p][b].Add(Abstain) //todo check if this is true
+			}
+		})
 
-				ni.tVote[p][b] = ni.GlobalOpinion(p, b) //todo not sure if this is blocks in p's view or all blocks before to p
-			})
+		ni.forBlockInWindow(ni.pBase.Layer(), p.Layer(), func(b *NinjaBlock) {
+			ni.tVote[p][b] = ni.GlobalOpinion(p, b) //todo this is not here
+		})
 
-		//todo check if p is complete id so pBase = p, this is not in the article
+		//todo check if p is complete if so pBase = p, this is not in the article
+		// update completeness as part of vote update
+		ni.UpdateCorrectionVectors(p) //todo ?????? check if this is the correct place to call this
 		if ni.tComplete[p] {
 			ni.pBase = p
 		}
@@ -210,17 +205,29 @@ func (ni ninjaTortoise) UpdateTables(b []*NinjaBlock, i LayerID) { //i most rece
 	}
 }
 
-func ForEachInView(blocks []*NinjaBlock, layer LayerID, foo func(*NinjaBlock)) {
+func (ni ninjaTortoise) forBlockInView(blocks []*NinjaBlock, layer mesh.LayerID, foo func(*NinjaBlock)) {
 	stack := list.New()
 	for b := range blocks {
 		stack.PushFront(b)
 	}
-	for b := stack.Front().Value.(*NinjaBlock); b != nil; {
-		//push children to bfs queue
-		foo(b)
-		for bChild := range b.ViewEdges {
-			if b.Layer() > layer { //dont traverse too deep
-				stack.PushBack(bChild)
+	for b := stack.Front(); b != nil; {
+		if block, err := ni.Mesh.GetBlock(b.Value.(mesh.BlockID)); err == nil {
+			foo(NewNinjaBlock(block))
+			//push children to bfs queue
+			for bChild := range block.ViewEdges {
+				if block.Layer() > layer { //dont traverse too deep
+					stack.PushBack(bChild)
+				}
+			}
+		}
+	}
+}
+
+func (ni ninjaTortoise) forBlockInWindow(i mesh.LayerID, j mesh.LayerID, foo func(*NinjaBlock)) {
+	for ; i <= j; j++ {
+		if layer, err := ni.Mesh.GetLayer(i); err != nil { //todo relay on Database cache or implement specific cache here ?
+			for _, b := range layer.Blocks() {
+				foo(NewNinjaBlock(b))
 			}
 		}
 	}

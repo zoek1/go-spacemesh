@@ -44,13 +44,22 @@ func (m *meshDB) Close() {
 	m.orphanBlocks.Close()
 }
 
-func (m *meshDB) getLayer(index LayerID) (*Layer, error) {
+func (m *meshDB) getLayerIds(index LayerID) (map[BlockID]bool, error) {
 	ids, err := m.layers.Get(index.ToBytes())
 	if err != nil {
 		return nil, errors.New("error getting layer from database ")
 	}
 
 	blockIds, err := bytesToBlockIds(ids)
+	if err != nil {
+		return nil, errors.New("could not get all blocks from database ")
+	}
+
+	return blockIds, nil
+}
+func (m *meshDB) getLayer(index LayerID) (*Layer, error) {
+
+	blockIds, err := m.getLayerIds(index)
 	if err != nil {
 		return nil, errors.New("could not get all blocks from database ")
 	}

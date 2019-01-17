@@ -112,6 +112,10 @@ func (m *Mesh) GetLayer(i LayerID) (*Layer, error) {
 	return m.getLayer(i)
 }
 
+func (m *Mesh) GetLayerIds(i LayerID) (map[BlockID]bool, error) {
+	return m.getLayerIds(i)
+}
+
 func (m *Mesh) AddBlock(block *Block) error {
 	log.Debug("add block ", block.ID())
 	if err := m.addBlock(block); err != nil {

@@ -292,7 +292,10 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 			}
 		}
 
-		ni.forBlockInView(ni.tPattern[p], ni.pBase.Layer(), ni.addPatternVote(p)) // for each block in p's view add the pattern votes
+		// for each block in p's view add the pattern votes
+		ni.forBlockInView(ni.tPattern[p], ni.pBase.Layer(), ni.addPatternVote(p))
+		//update correction vectors after vote count
+		ni.updateCorrectionVectors(&p)
 
 		//for all blocks between p and p base update vote
 		flag := true
@@ -321,8 +324,6 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 
 		// update completeness of p
 		ni.tComplete[p] = flag
-		//update correction vectors after vote count
-		ni.updateCorrectionVectors(&p)
 		if ni.tComplete[p] {
 			ni.pBase = &p
 		}
@@ -333,10 +334,10 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 func (ni *ninjaTortoise) addPatternVote(p votingPattern) func(b *ninjaBlock) {
 	addPatternVote := func(b *ninjaBlock) {
 		var v *vec
-		exp := ni.tExplicit[p.Layer()][b.ID()]
+		exp := ni.tExplicit[p.Layer()][b.ID()] //EXPLICIT
 		if exp != nil && p == *exp {
 			v = &vec{1, 0}
-		} else if ni.tExplicit[p.Layer()][b.ID()] != nil {
+		} else if ni.tExplicit[p.Layer()][b.ID()] != nil { //IMPLICIT
 			v = &vec{0, 1}
 		} else {
 			v = &vec{0, 0}

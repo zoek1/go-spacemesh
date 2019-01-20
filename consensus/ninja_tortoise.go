@@ -284,7 +284,9 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 
 	//from minimal good pattern to current layer
 	for j := l; j < i; j++ {
-		p := *ni.tGood[j]                               //the good layer of j
+
+		//update pattern tally for all good layers
+		p := *ni.tGood[j]
 		ni.tTally[p] = ni.tTally[*ni.pBase]             //init tally for p
 		for k := ni.pBase.Layer(); k < p.Layer(); k++ { //update pattern tally for each good layer on the way
 			if gK := ni.tGood[k]; gK != nil {
@@ -324,7 +326,7 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 
 		// update completeness of p
 		ni.tComplete[p] = flag
-		if ni.tComplete[p] {
+		if flag {
 			ni.pBase = &p
 		}
 	}

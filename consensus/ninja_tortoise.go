@@ -203,23 +203,24 @@ func (ni *ninjaTortoise) updatePatternTally(pBase votingPattern, g votingPattern
 	}
 	// bfs this sucker to get all blocks who's effective vote pattern is g and layer id i s.t pBase<i<p
 	var b *ninjaBlock
-	corr := make(map[votingPattern]*vec)
+	var corr *vec
 	effCount := 0
-	for b = stack.Front().Value.(*ninjaBlock); b != nil && *ni.tEffective[b.ID()] == g; {
+	for b = stack.Front().Value.(*ninjaBlock); b != nil; {
 		//corr = corr + TCorrect[B]
-		for k, v := range ni.tCorrect[b.ID()] {
-			corr[k] = corr[k].Add(v)
+		if *ni.tEffective[b.ID()] == g {
+			corr = corr.Add(ni.tCorrect[b.ID()][g])
+			effCount++
 		}
-		effCount++
 		//push children to bfs queue
 		for bChild := range b.ViewEdges {
-			if b.Layer() > pBase.Layer() { //dont traverse too deep
+			if b.Layer() > g.Layer() { //dont traverse too deep
 				stack.PushBack(bChild)
 			}
 		}
 	}
+
 	for b := range ni.tTally[p] {
-		ni.tTally[p][b] = ni.tTally[p][b].Add(ni.tVote[g][b].Multiplay(effCount).Add(corr[p]))
+		ni.tTally[p][b] = ni.tTally[p][b].Add(ni.tVote[g][b].Multiplay(effCount).Add(corr))
 	}
 
 	//update negative votes

@@ -219,10 +219,17 @@ func (ni *ninjaTortoise) updatePatternTally(pBase votingPattern, g votingPattern
 		}
 	}
 
-	for b := range ni.tTally[p] {
-		ni.tTally[p][b] = ni.tTally[p][b].Add(ni.tVote[g][b].Multiplay(effCount).Add(corr))
+	for i := ni.pBase.Layer(); i <= g.Layer(); i++ {
+		if layer, found := ni.layerBlocks[i]; found {
+			for _, b := range layer {
+				if v, found := ni.tVote[g][b]; found {
+					ni.tTally[p][b] = ni.tTally[p][b].Add(v.Multiplay(effCount).Add(corr)) //in g's view -> in p's view
+				} else {
+					ni.tTally[p][b] = ni.tTally[p][b].Add(Against.Multiplay(effCount).Add(corr)) // not in g's so not in p's through g
+				}
+			}
+		}
 	}
-
 	//update negative votes
 	//for each block between pbase and p that is not in p's view
 

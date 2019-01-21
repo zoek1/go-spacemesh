@@ -191,9 +191,12 @@ func (ni *ninjaTortoise) updateCorrectionVectors(p votingPattern) {
 	}
 }
 
-func (ni *ninjaTortoise) updatePatternTally(pBase *votingPattern, g *votingPattern, p votingPattern) {
-	//init
-	ni.tTally[p] = ni.tTally[*ni.pBase] //init tally for p
+func (ni *ninjaTortoise) updatePatternTally(pBase votingPattern, g votingPattern, p votingPattern) {
+	//init p's tally to pBase tally
+	for k, v := range ni.tTally[pBase] {
+		ni.tTally[p][k] = v
+	}
+
 	stack := list.New()
 	for b := range ni.tPattern[p] {
 		stack.PushFront(b)
@@ -202,7 +205,7 @@ func (ni *ninjaTortoise) updatePatternTally(pBase *votingPattern, g *votingPatte
 	var b *ninjaBlock
 	corr := make(map[votingPattern]*vec)
 	effCount := 0
-	for b = stack.Front().Value.(*ninjaBlock); b != nil; {
+	for b = stack.Front().Value.(*ninjaBlock); b != nil && *ni.tEffective[b.ID()] == g; {
 		//corr = corr + TCorrect[B]
 		for k, v := range ni.tCorrect[b.ID()] {
 			corr[k] = corr[k].Add(v)
@@ -216,8 +219,11 @@ func (ni *ninjaTortoise) updatePatternTally(pBase *votingPattern, g *votingPatte
 		}
 	}
 	for b := range ni.tTally[p] {
-		ni.tTally[p][b] = ni.tTally[p][b].Add(ni.tVote[p][b].Multiplay(effCount).Add(corr[p]))
+		ni.tTally[p][b] = ni.tTally[p][b].Add(ni.tVote[g][b].Multiplay(effCount).Add(corr[p]))
 	}
+
+	//update negative votes
+	//for each block between pbase and p that is not in p's view
 
 }
 
@@ -276,6 +282,25 @@ func (ni *ninjaTortoise) findMinimalGoodLayer(i mesh.LayerID, b []*ninjaBlock) m
 	return l
 }
 
+func (ni *ninjaTortoise) addPatternVote(p votingPattern) func(b *ninjaBlock) {
+	addPatternVote := func(b *ninjaBlock) {
+		var v *vec
+		exp := ni.tExplicit[p.Layer()][b.ID()] //EXPLICIT
+		if exp != nil && p == *exp {
+			v = &vec{1, 0}
+		} else if ni.tExplicit[p.Layer()][b.ID()] != nil { //IMPLICIT
+			v = &vec{0, 1}
+		} else {
+			v = &vec{0, 0}
+		}
+		if val, found := ni.tTally[p]; !found || val == nil {
+			ni.tTally[p] = make(map[mesh.BlockID]*vec)
+		}
+		ni.tTally[p][b.ID()] = ni.tTally[p][b.ID()].Add(v)
+	}
+	return addPatternVote
+}
+
 func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.LayerID { //i most recent layer
 
 	//initialize these tables //not in article
@@ -294,11 +319,11 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 		p := *ni.tGood[j]
 		for k := ni.pBase.Layer(); k < j; k++ { //update pattern tally for each good layer on the way
 			if gK := ni.tGood[k]; gK != nil {
-				ni.updatePatternTally(ni.pBase, gK, p)
+				ni.updatePatternTally(*ni.pBase, *gK, p)
 			}
 		}
 		// for each block in p's view add the pattern votes
-		viewSize := ni.forBlockInView(ni.tPattern[p], ni.pBase.Layer(), ni.addPatternVote(p))
+		ni.forBlockInView(ni.tPattern[p], ni.pBase.Layer(), ni.addPatternVote(p))
 		//update correction vectors after vote count
 		ni.updateCorrectionVectors(p)
 
@@ -310,12 +335,6 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 				bids := make([]mesh.BlockID, 0, LayerSize)
 				for _, bid := range layer {
 					b := ni.blocks[bid]
-
-					//update negative votes
-					if _, found := ni.tTally[p][b.ID()]; !found {
-						ni.tTally[p][b.ID()] = ni.tTally[p][b.ID()].Add(Against.Multiplay(int(LayerSize * (p.Layer() - ni.pBase.Layer() - mesh.LayerID(viewSize)))))
-					}
-
 					if vote, err := ni.globalOpinion(&p, b); err == nil {
 						if val, found := ni.tVote[p]; !found || val == nil {
 							ni.tVote[p] = make(map[mesh.BlockID]*vec)
@@ -341,25 +360,6 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 		}
 	}
 	return ni.pBase.LayerID
-}
-
-func (ni *ninjaTortoise) addPatternVote(p votingPattern) func(b *ninjaBlock) {
-	addPatternVote := func(b *ninjaBlock) {
-		var v *vec
-		exp := ni.tExplicit[p.Layer()][b.ID()] //EXPLICIT
-		if exp != nil && p == *exp {
-			v = &vec{1, 0}
-		} else if ni.tExplicit[p.Layer()][b.ID()] != nil { //IMPLICIT
-			v = &vec{0, 1}
-		} else {
-			v = &vec{0, 0}
-		}
-		if val, found := ni.tTally[p]; !found || val == nil {
-			ni.tTally[p] = make(map[mesh.BlockID]*vec)
-		}
-		ni.tTally[p][b.ID()] = ni.tTally[p][b.ID()].Add(v)
-	}
-	return addPatternVote
 }
 
 //todo tally for blocks that are not in view

@@ -145,6 +145,7 @@ func (ni *ninjaTortoise) forBlockInView(blocks []mesh.BlockID, layer mesh.LayerI
 		stack.PushFront(b)
 	}
 	layerCounter := make(map[mesh.LayerID]int)
+	set := make(map[mesh.BlockID]struct{})
 	for b := stack.Front(); b != nil; b = stack.Front() {
 		a := stack.Remove(stack.Front()).(mesh.BlockID)
 		ni.Debug("handle block", a)
@@ -157,7 +158,10 @@ func (ni *ninjaTortoise) forBlockInView(blocks []mesh.BlockID, layer mesh.LayerI
 		//push children to bfs queue
 		for _, bChild := range block.ViewEdges {
 			if block.Layer() > layer { //dont traverse too deep
-				stack.PushBack(bChild)
+				if _, found := set[bChild]; !found {
+					set[bChild] = struct{}{}
+					stack.PushBack(bChild)
+				}
 			}
 		}
 	}
@@ -206,26 +210,16 @@ func (ni *ninjaTortoise) updatePatternTally(pBase votingPattern, g votingPattern
 
 	corr := &vec{}
 	effCount := 0
-	fmt.Println("pt start bfs")
-	set := make(map[mesh.BlockID]struct{})
-	for item := stack.Front(); item != nil; item = stack.Front() {
-		b := stack.Remove(item).(*ninjaBlock)
-		//corr = corr + TCorrect[B]
+	//set := make(map[mesh.BlockID]struct{})
+	foo := func(b *ninjaBlock) {
 		if *ni.tEffective[b.ID()] == g {
 			corr = corr.Add(ni.tCorrect[b.ID()][g])
 			effCount++
 		}
-		//push children to bfs queue
-		for _, bChild := range b.ViewEdges {
-			if b.Layer() > g.Layer() { //dont traverse too deep
-				if _, ok := set[bChild]; !ok {
-					set[bChild] = struct{}{}
-					block := ni.blocks[bChild]
-					stack.PushBack(block)
-				}
-			}
-		}
 	}
+
+	ni.forBlockInView(ni.tPattern[p], g.Layer(), foo)
+
 	for i := ni.pBase.Layer(); i <= g.Layer(); i++ {
 		if layer, found := ni.layerBlocks[i]; found {
 			for _, b := range layer {

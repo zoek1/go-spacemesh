@@ -232,7 +232,7 @@ func (ni *ninjaTortoise) updatePatternTally(pBase votingPattern, g votingPattern
 		if layer, found := ni.layerBlocks[i]; found {
 			for _, b := range layer {
 				if v, found := ni.tVote[g][b]; found {
-					tally := ni.tTally[p][b].Add(v.Multiplay(effCount).Add(corr))
+					tally := ni.tTally[p][b].Add(&vec{0, v[1]}).Multiplay(effCount).Add(corr)
 					ni.Debug("tally for pattern %d  and block %d is %d", p.id, b, tally)
 					ni.tTally[p][b] = tally //in g's view -> in p's view
 				}
@@ -286,7 +286,7 @@ func (ni *ninjaTortoise) findMinimalGoodLayer(i mesh.LayerID, b []*ninjaBlock) m
 			//if a majority supports p (p is good)
 			//according to tal we dont have to know the exact amount, we can multiply layer size by number of layers
 			jGood, found := ni.tGood[j]
-			threshold := 0.5 * float64(mesh.LayerID(ni.LayerSize*uint32(i))-p.Layer())
+			threshold := 0.5 * float64(mesh.LayerID(ni.LayerSize)*(i-p.Layer()))
 
 			if (jGood != p || !found) && float64(ni.tSupport[p]) > threshold {
 				ni.tGood[p.Layer()] = p
@@ -346,7 +346,7 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 				if _, found := ni.tTally[p]; !found {
 					ni.tTally[p] = make(map[mesh.BlockID]*vec)
 				}
-				ni.tTally[p][k] = &vec{0, v[0]}
+				ni.tTally[p][k] = v
 			}
 
 			//update pattern tally for each good layer on the way

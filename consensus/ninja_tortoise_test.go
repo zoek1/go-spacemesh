@@ -32,7 +32,7 @@ func NewNinjaTortoise(layerSize uint32) *ninjaTortoise {
 		tEffective:         make(map[mesh.BlockID]*votingPattern, K*layerSize),
 		tCorrect:           make(map[mesh.BlockID]map[votingPattern]*vec, K*layerSize),
 		layerBlocks:        make(map[mesh.LayerID][]mesh.BlockID, layerSize),
-		tExplicit:          make(map[mesh.LayerID]map[mesh.BlockID]*votingPattern, K),
+		tExplicit:          make(map[mesh.BlockID]map[mesh.LayerID]*votingPattern, K),
 		tGood:              make(map[mesh.LayerID]votingPattern, K),
 		tSupport:           make(map[votingPattern]int, layerSize),
 		tPattern:           make(map[votingPattern][]mesh.BlockID, layerSize),
@@ -48,8 +48,8 @@ func TestNinjaTortoise_UpdateCorrectionVectors(t *testing.T) {
 	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
 	alg.HandleGenesis(l.Blocks()[0])
-	for i := 0; i < 3; i++ {
-		lyr := createLayer(l, 3, 2)
+	for i := 0; i < 5; i++ {
+		lyr := createLayer(l, 2, 1)
 		start := time.Now()
 		alg.UpdateTables(lyr.Blocks(), lyr.Index())
 		log.Info("Time to process layer: %v ", time.Since(start))

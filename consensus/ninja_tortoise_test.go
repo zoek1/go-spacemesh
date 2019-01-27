@@ -27,7 +27,7 @@ func NewNinjaTortoise(layerSize uint32) *ninjaTortoise {
 	return &ninjaTortoise{
 		Log:                log.New("optimized tortoise ", "", ""),
 		LayerSize:          layerSize,
-		pBase:              &votingPattern{},
+		pBase:              nil,
 		blocks:             make(map[mesh.BlockID]*ninjaBlock, K*layerSize),
 		tEffective:         make(map[mesh.BlockID]*votingPattern, K*layerSize),
 		tCorrect:           make(map[mesh.BlockID]map[votingPattern]*vec, K*layerSize),
@@ -45,11 +45,11 @@ func NewNinjaTortoise(layerSize uint32) *ninjaTortoise {
 }
 
 func TestNinjaTortoise_UpdateCorrectionVectors(t *testing.T) {
-	alg := NewNinjaTortoise(5)
+	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
-	alg.UpdateTables(l.Blocks(), l.Index())
-	for i := 0; i < 10; i++ {
-		lyr := createLayer(l, 5, 4)
+	alg.HandleGenesis(l.Blocks()[0])
+	for i := 0; i < 3; i++ {
+		lyr := createLayer(l, 3, 2)
 		start := time.Now()
 		alg.UpdateTables(lyr.Blocks(), lyr.Index())
 		log.Info("Time to process layer: %v ", time.Since(start))
@@ -111,6 +111,20 @@ func TestNinjaTortoise_GlobalOpinion(t *testing.T) {
 }
 
 func TestNinjaTortoise_UpdatePatternTally(t *testing.T) {
+	alg := NewNinjaTortoise(2)
+	l := createGenesisLayer()
+	alg.HandleGenesis(l.Blocks()[0])
+	for i := 0; i < 3; i++ {
+		lyr := createLayer(l, 2, 1)
+		start := time.Now()
+		alg.UpdateTables(lyr.Blocks(), lyr.Index())
+		log.Info("Time to process layer: %v ", time.Since(start))
+		l = lyr
+	}
+
+	for k, v := range alg.tVote {
+		fmt.Println("key ", k, "val ", v)
+	}
 
 }
 

@@ -183,7 +183,7 @@ func (ni *ninjaTortoise) globalOpinion(p *votingPattern, x *ninjaBlock) (*vec, e
 	}
 	delta := float64(p.LayerID - x.Layer())
 	threshold := float64(GlobalThreshold*delta) * float64(ni.LayerSize)
-	ni.Debug("threshold: %d tally: %d ", threshold, v)
+	ni.Debug("threshold: %f tally: %d ", threshold, *v)
 	if float64(v[0]) > threshold {
 		return Support, nil
 	} else if float64(v[1]) > threshold {
@@ -200,7 +200,7 @@ func (ni *ninjaTortoise) updateCorrectionVectors(p votingPattern) {
 				if _, found := ni.tCorrect[x]; !found {
 					ni.tCorrect[x] = make(map[votingPattern]*vec)
 				}
-				ni.Debug("update correction vector for block %d layer %d")
+				ni.Debug("update correction vector for block %d pattern %d", x, p)
 				ni.tCorrect[x][p] = ni.tVote[p][x].Negate() //Tcorrect[b][x] = -Tvote[p][x]
 			}
 		}
@@ -324,20 +324,30 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 		ni.layerBlocks[i] = append(ni.layerBlocks[i], block.ID())
 	}
 
-	l := ni.findMinimalGoodLayer(i, b)
-
+	//handle Genesis
 	if i == Genesis {
-		ni.pBase = &votingPattern{id: getId(ni.layerBlocks[Genesis]), LayerID: Genesis}
+		vp := &votingPattern{id: getId(ni.layerBlocks[Genesis]), LayerID: Genesis}
+		ni.pBase = vp
+		ni.tGood[Genesis] = *vp
+		return 0
+	} else if i == Genesis+1 {
+		vp := &votingPattern{id: getId(ni.layerBlocks[Genesis+1]), LayerID: Genesis}
+		for _, b := range ni.layerBlocks[Genesis] {
+			ni.tTally[*vp] = make(map[mesh.BlockID]*vec)
+			ni.tTally[*vp][b] = &vec{len(B), 0}
+		}
+		return 0
 	}
 
-	//from minimal good pattern to current layer
+	l := ni.findMinimalGoodLayer(i, b)
+
+	//from minimal good pattern to current layer //todo (including ????)
 	//update pattern tally for all good layers
-	for j := l; j < i && i != Genesis; j++ {
-		if p, found := ni.tGood[j]; found {
+	for j := l; j <= i; j++ {
+		if p, gfound := ni.tGood[j]; gfound {
 			//init p's tally to pBase tally
 			for k, v := range ni.tTally[*ni.pBase] {
 				if _, found := ni.tTally[p]; !found {
-					fmt.Println("duck ", p.Layer())
 					ni.tTally[p] = make(map[mesh.BlockID]*vec)
 				}
 				ni.tTally[p][k] = v
@@ -348,7 +358,7 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 				if gK, found := ni.tGood[k]; found {
 					ni.updatePatternTally(*ni.pBase, gK, p)
 				} else {
-					ni.Error(" failed for ", k)
+					panic("whattttttt")
 				}
 			}
 
@@ -357,13 +367,11 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 
 			//update correction vectors after vote count
 			ni.updateCorrectionVectors(p)
-			flag := true
-
+			complete := true
 			//update vote for each block between pbase and p
-			var layer []mesh.BlockID
 			for idx := ni.pBase.Layer(); idx < j; idx++ {
-
-				if layer, found = ni.layerBlocks[idx]; !found {
+				layer, lfound := ni.layerBlocks[idx]
+				if !lfound {
 					panic("layer not found ")
 				}
 
@@ -387,22 +395,26 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 						ni.tVote[p][b.ID()] = vote
 						bids = append(bids, bid)
 					} else {
-						flag = false //not complete
+						complete = false //not complete
 					}
 				}
 				if val, found := ni.tPatSupport[p]; !found || val == nil {
 					ni.tPatSupport[p] = make(map[mesh.LayerID]*votingPattern)
 				}
 				pid := getId(bids)
-				ni.Debug("update support for ", p, " layer ", idx, " supported pattern", pid)
+				ni.Debug("update support for %d layer %d supported pattern %d", p, idx, pid)
 				ni.tPatSupport[p][i] = &votingPattern{id: getId(bids), LayerID: idx}
 
 			}
 
 			// update completeness of p
-			if _, found := ni.tComplete[p]; flag && !found {
+			if _, found := ni.tComplete[p]; complete && !found {
 				ni.tComplete[p] = struct{}{}
 				ni.Debug("found new complete and good pattern for layer %d pattern %d with %d support ", l, p.id, ni.tSupport[p])
+				ni.Debug("print all block votes for new pbase ")
+				for b, vec := range ni.tVote[p] {
+					ni.Debug("------> votes for block %d according to complete pattern %d are %d", b, p, vec)
+				}
 				ni.pBase = &p
 			}
 		}

@@ -1,33 +1,20 @@
 package consensus
 
 import (
-	"fmt"
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/mesh"
+	"github.com/stretchr/testify/assert"
 	"math/rand"
 	"testing"
 	"time"
 )
 
-func TestNinjaTortoise_UpdateTables(t *testing.T) {
-	alg := NewNinjaTortoise(200)
-	l := createGenesisLayer()
-	alg.UpdateTables(l.Blocks(), l.Index())
-	for i := 0; i < 11-1; i++ {
-		lyr := createFullPointingLayer(l, 200)
-		start := time.Now()
-		l = lyr
-		alg.UpdateTables(l.Blocks(), l.Index())
-		log.Info("Time to process layer: %v ", time.Since(start))
-	}
-}
-
 func NewNinjaTortoise(layerSize uint32) *ninjaTortoise {
 	return &ninjaTortoise{
 		Log:                log.New("optimized tortoise ", "", ""),
 		LayerSize:          layerSize,
-		pBase:              nil,
+		pBase:              votingPattern{},
 		blocks:             make(map[mesh.BlockID]*ninjaBlock, K*layerSize),
 		tEffective:         make(map[mesh.BlockID]*votingPattern, K*layerSize),
 		tCorrect:           make(map[mesh.BlockID]map[votingPattern]*vec, K*layerSize),
@@ -44,21 +31,77 @@ func NewNinjaTortoise(layerSize uint32) *ninjaTortoise {
 	}
 }
 
-func TestNinjaTortoise_UpdateCorrectionVectors(t *testing.T) {
+func TestNinjaTortoise_case1(t *testing.T) {
 	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
+	genesisId := l.Blocks()[0].ID()
 	alg.UpdateTables(l.Blocks(), Genesis)
-	for i := 0; i < 3; i++ {
-		lyr := createLayer(l, 2, 1)
+	l = createLayer(l, 2, 1)
+	alg.UpdateTables(l.Blocks(), Genesis+1)
+	for i := 0; i < 1; i++ {
+		lyr := createLayer(l, 2, 2)
 		start := time.Now()
 		alg.UpdateTables(lyr.Blocks(), lyr.Index())
-		log.Info("Time to process layer: %v ", time.Since(start))
+		alg.Info("Time to process layer: %v ", time.Since(start))
 		l = lyr
 	}
 
-	for k, v := range alg.tVote {
-		fmt.Println("key ", k, "val ", v)
+	alg.Debug("print all block votes for new pbase ")
+	for b, vec := range alg.tVote[alg.pBase] {
+		alg.Debug("------> votes for block %d according to complete pattern %d are %d", b, alg.pBase, vec)
 	}
+
+	assert.True(t, *alg.tVote[alg.pBase][genesisId] == vec{2, 0}, "vote was %d insted of %d", *alg.tVote[alg.pBase][genesisId], vec{2, 0})
+
+}
+
+func TestNinjaTortoise_case2(t *testing.T) {
+	alg := NewNinjaTortoise(2)
+	l := createGenesisLayer()
+	genesisId := l.Blocks()[0].ID()
+	alg.UpdateTables(l.Blocks(), Genesis)
+	l = createLayer(l, 2, 1)
+	alg.UpdateTables(l.Blocks(), Genesis+1)
+	for i := 0; i < 2; i++ {
+		lyr := createLayer(l, 2, 2)
+		start := time.Now()
+		alg.UpdateTables(lyr.Blocks(), lyr.Index())
+		alg.Info("Time to process layer: %v ", time.Since(start))
+		l = lyr
+	}
+
+	alg.Debug("print all block votes for new pbase ")
+	for b, vec := range alg.tVote[alg.pBase] {
+		alg.Debug("------> votes for block %d according to complete pattern %d are %d", b, alg.pBase, vec)
+	}
+
+	assert.True(t, *alg.tVote[alg.pBase][genesisId] == vec{2, 0}, "vote was %d insted of %d", *alg.tVote[alg.pBase][genesisId], vec{4, 0})
+}
+
+func TestNinjaTortoise_case3(t *testing.T) {
+	alg := NewNinjaTortoise(2)
+	l := createGenesisLayer()
+	genesisId := l.Blocks()[0].ID()
+	alg.UpdateTables(l.Blocks(), Genesis)
+	l = createLayer(l, 2, 1)
+	alg.UpdateTables(l.Blocks(), Genesis+1)
+
+	lyr := createLayer(l, 2, 2)
+	start := time.Now()
+	alg.UpdateTables(lyr.Blocks(), lyr.Index())
+	alg.Info("Time to process layer: %v ", time.Since(start))
+
+	lyr = createLayer(l, 2, 1)
+	start = time.Now()
+	alg.UpdateTables(lyr.Blocks(), lyr.Index())
+	alg.Info("Time to process layer: %v ", time.Since(start))
+
+	alg.Debug("print all block votes for new pbase ")
+	for b, vec := range alg.tVote[alg.pBase] {
+		alg.Debug("------> votes for block %d according to complete pattern %d are %d", b, alg.pBase, vec)
+	}
+
+	assert.True(t, *alg.tVote[alg.pBase][genesisId] == vec{3, 0}, "vote was %d insted of %d", *alg.tVote[alg.pBase][genesisId], vec{3, 0})
 }
 
 func createLayer(prev *mesh.Layer, blocksInLayer int, patternSize int) *mesh.Layer {
@@ -86,10 +129,11 @@ func createLayer(prev *mesh.Layer, blocksInLayer int, patternSize int) *mesh.Lay
 }
 
 func chooseRandomPattern(blocksInLayer int, patternSize int) []int {
-	rand.Seed(time.Now().Unix()) // initialize global pseudo random generator
+	rand.Seed(time.Now().UnixNano())
+	p := rand.Perm(blocksInLayer)
 	indexes := make([]int, 0, patternSize)
-	for i := 0; i < patternSize; i++ {
-		indexes = append(indexes, rand.Intn(blocksInLayer))
+	for _, r := range p[:patternSize] {
+		indexes = append(indexes, r)
 	}
 	return indexes
 }
@@ -111,21 +155,6 @@ func TestNinjaTortoise_GlobalOpinion(t *testing.T) {
 }
 
 func TestNinjaTortoise_UpdatePatternTally(t *testing.T) {
-	alg := NewNinjaTortoise(2)
-	l := createGenesisLayer()
-	alg.UpdateTables(l.Blocks(), Genesis)
-	for i := 0; i < 5; i++ {
-		lyr := createLayer(l, 2, 1)
-		start := time.Now()
-		alg.UpdateTables(lyr.Blocks(), lyr.Index())
-		log.Info("Time to process layer: %v ", time.Since(start))
-		l = lyr
-	}
-
-	for k, v := range alg.tVote {
-		fmt.Println("key ", k, "val ", v)
-	}
-
 }
 
 func TestForEachInView(t *testing.T) {

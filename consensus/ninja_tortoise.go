@@ -156,8 +156,8 @@ func (ni *ninjaTortoise) forBlockInView(blocks []mesh.BlockID, layer mesh.LayerI
 	set := make(map[mesh.BlockID]struct{})
 	for b := stack.Front(); b != nil; b = stack.Front() {
 		a := stack.Remove(stack.Front()).(mesh.BlockID)
-		ni.Debug("handle block %d", a)
 		block, found := ni.blocks[a]
+		ni.Debug("handle block %d layer %d", block.ID(), block.Layer())
 		if !found {
 			ni.Error("error block %d not found ", a)
 		}
@@ -200,7 +200,7 @@ func (ni *ninjaTortoise) updateCorrectionVectors(p votingPattern) {
 				if _, found := ni.tCorrect[x]; !found {
 					ni.tCorrect[x] = make(map[votingPattern]*vec)
 				}
-				ni.Debug("update correction vector for block %d", x)
+				ni.Debug("update correction vector for block %d layer %d")
 				ni.tCorrect[x][p] = ni.tVote[p][x].Negate() //Tcorrect[b][x] = -Tvote[p][x]
 			}
 		}
@@ -232,7 +232,7 @@ func (ni *ninjaTortoise) updatePatternTally(pBase votingPattern, g votingPattern
 		if layer, found := ni.layerBlocks[i]; found {
 			for _, b := range layer {
 				if v, found := ni.tVote[g][b]; found {
-					tally := ni.tTally[p][b].Add(&vec{0, v[1]}).Multiplay(effCount).Add(corr)
+					tally := ni.tTally[p][b].Add(v).Multiplay(effCount).Add(corr)
 					ni.Debug("tally for pattern %d  and block %d is %d", p.id, b, tally)
 					ni.tTally[p][b] = tally //in g's view -> in p's view
 				}
@@ -245,8 +245,8 @@ func (ni *ninjaTortoise) updatePatternTally(pBase votingPattern, g votingPattern
 // return new minimal good layer
 func (ni *ninjaTortoise) findMinimalGoodLayer(i mesh.LayerID, b []*ninjaBlock) mesh.LayerID {
 	var j mesh.LayerID
-	if i == Genesis+1 {
-		j = Genesis
+	if i == Genesis {
+		return 0
 	} else if i < Window {
 		j = ni.pBase.Layer() + 1
 	} else {
@@ -255,7 +255,6 @@ func (ni *ninjaTortoise) findMinimalGoodLayer(i mesh.LayerID, b []*ninjaBlock) m
 
 	var minGood mesh.LayerID
 	for ; j < i; j++ {
-
 		sUpdated := map[votingPattern]struct{}{}
 		// update block votes on all patterns in blocks view
 		for _, block := range b {
@@ -306,22 +305,12 @@ func (ni *ninjaTortoise) addPatternVote(p votingPattern) func(b *ninjaBlock) {
 		for _, ex := range ni.tExplicit[b.ID()] {
 			for _, block := range ni.tPattern[*ex] {
 				ni.Debug("add pattern vote for pattern %d block %d", p.id, block)
-				ni.tTally[p][block].Add(&vec{1, 0})
+				ni.tTally[p][block] = ni.tTally[p][block].Add(&vec{1, 0})
+				fmt.Println(ni.tTally[p][block])
 			}
 		}
 	}
 	return addPatternVote
-}
-
-func (ni *ninjaTortoise) HandleGenesis(block *mesh.Block) {
-
-	nb := ni.processBlock(block)
-	ni.blocks[nb.ID()] = nb
-	ni.layerBlocks[Genesis] = append(ni.layerBlocks[Genesis], block.ID())
-	p := votingPattern{id: getId([]mesh.BlockID{block.ID()}), LayerID: Genesis}
-	ni.tPattern[p] = []mesh.BlockID{block.ID()}
-	ni.tGood[Genesis] = p
-	ni.pBase = &p
 }
 
 func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.LayerID { //i most recent layer
@@ -337,13 +326,18 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 
 	l := ni.findMinimalGoodLayer(i, b)
 
+	if i == Genesis {
+		ni.pBase = &votingPattern{id: getId(ni.layerBlocks[Genesis]), LayerID: Genesis}
+	}
+
 	//from minimal good pattern to current layer
 	//update pattern tally for all good layers
-	for j := l; j < i && i > Genesis; j++ {
+	for j := l; j < i && i != Genesis; j++ {
 		if p, found := ni.tGood[j]; found {
 			//init p's tally to pBase tally
 			for k, v := range ni.tTally[*ni.pBase] {
 				if _, found := ni.tTally[p]; !found {
+					fmt.Println("duck ", p.Layer())
 					ni.tTally[p] = make(map[mesh.BlockID]*vec)
 				}
 				ni.tTally[p][k] = v
@@ -413,7 +407,6 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 			}
 		}
 	}
-
 	return ni.pBase.LayerID
 }
 

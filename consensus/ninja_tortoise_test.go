@@ -47,8 +47,8 @@ func NewNinjaTortoise(layerSize uint32) *ninjaTortoise {
 func TestNinjaTortoise_UpdateCorrectionVectors(t *testing.T) {
 	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
-	alg.HandleGenesis(l.Blocks()[0])
-	for i := 0; i < 5; i++ {
+	alg.UpdateTables(l.Blocks(), Genesis)
+	for i := 0; i < 20; i++ {
 		lyr := createLayer(l, 2, 1)
 		start := time.Now()
 		alg.UpdateTables(lyr.Blocks(), lyr.Index())
@@ -113,7 +113,7 @@ func TestNinjaTortoise_GlobalOpinion(t *testing.T) {
 func TestNinjaTortoise_UpdatePatternTally(t *testing.T) {
 	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
-	alg.HandleGenesis(l.Blocks()[0])
+	alg.UpdateTables(l.Blocks(), Genesis)
 	for i := 0; i < 3; i++ {
 		lyr := createLayer(l, 2, 1)
 		start := time.Now()

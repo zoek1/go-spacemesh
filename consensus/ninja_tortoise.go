@@ -212,35 +212,39 @@ func (ni *ninjaTortoise) updateCorrectionVectors(p votingPattern) {
 	ni.forBlockInView(ni.tPattern[p], ni.pBase.Layer(), foo)
 }
 
-func (ni *ninjaTortoise) updatePatternTally(pBase votingPattern, g votingPattern, p votingPattern) {
-	ni.Debug("update tally pbase id:%d layer:%d g id:%d layer:%d p id:%d layer:%d", pBase.id, pBase.Layer(), g.id, g.Layer(), p.id, p.Layer())
-	// bfs this sucker to get all blocks who's effective vote pattern is g and layer id i s.t pBase<i<p
-	//init p's tally to pBase tally
-	stack := list.New()
-	//include p
-	for _, b := range ni.tPattern[p] {
-		stack.PushBack(ni.blocks[b])
-	}
+func (ni *ninjaTortoise) updatePatternTally(newMinGood mesh.LayerID, pBase votingPattern, p votingPattern, bootomOfWindow mesh.LayerID) {
+	for k := ni.pBase.Layer() + 1; k <= newMinGood; k++ {
+		if g, found := ni.tGood[k]; found {
+			ni.Debug("update tally pbase id:%d layer:%d g id:%d layer:%d p id:%d layer:%d", pBase.id, pBase.Layer(), g.id, g.Layer(), p.id, p.Layer())
+			// bfs this sucker to get all blocks who's effective vote pattern is g and layer id i s.t pBase<i<p
+			//init p's tally to pBase tally
+			stack := list.New()
+			//include p
+			for _, b := range ni.tPattern[p] {
+				stack.PushBack(ni.blocks[b])
+			}
 
-	effCount := 0
-	corr := vec{0, 0}
-	foo := func(b *ninjaBlock) {
-		if *ni.tEffective[b.ID()] == g {
-			corr = corr.Add(ni.tCorrect[b.ID()][g])
-			effCount++
-		}
-	}
+			effCount := 0
+			corr := vec{0, 0}
+			foo := func(b *ninjaBlock) {
+				if b.Layer() > Genesis && *ni.tEffective[b.ID()] == g {
+					corr = corr.Add(ni.tCorrect[b.ID()][g])
+					effCount++
+				}
+			}
 
-	ni.forBlockInView(ni.tPattern[p], g.Layer(), foo)
+			ni.forBlockInView(ni.tPattern[p], g.Layer(), foo)
 
-	for i := ni.pBase.Layer(); i <= g.Layer(); i++ {
-		if layer, found := ni.layerBlocks[i]; found {
-			for _, b := range layer {
-				if v, found := ni.tVote[g][b]; found {
-					ni.Debug("correction vectors %d %d", corr, effCount)
-					tally := ni.tTally[p][b].Add(v).Multiplay(effCount).Add(corr)
-					ni.Debug("tally for pattern %d  and block %d is %d", p.id, b, tally)
-					ni.tTally[p][b] = tally //in g's view -> in p's view
+			for i := bootomOfWindow; i <= g.Layer(); i++ {
+				if layer, found := ni.layerBlocks[i]; found {
+					for _, b := range layer {
+						if v, found := ni.tVote[g][b]; found {
+							ni.Debug("correction vectors %d %d", corr, effCount)
+							tally := ni.tTally[p][b].Add(v).Multiplay(effCount).Add(corr)
+							ni.Debug("tally for pattern %d  and block %d is %d", p.id, b, tally)
+							ni.tTally[p][b] = tally //in g's view -> in p's view
+						}
+					}
 				}
 			}
 		}
@@ -324,9 +328,7 @@ func sumNodesInView(layerViewCounter map[mesh.LayerID]int, i mesh.LayerID, p mes
 	return Against.Multiplay(sum)
 }
 
-func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.LayerID { //i most recent layer
-	ni.Debug("update tables layer %d", i)
-	//initialize these tables //not in article
+func (ni *ninjaTortoise) processBlocks(B []*mesh.Block, i mesh.LayerID) []*ninjaBlock {
 	b := make([]*ninjaBlock, 0, len(B))
 	for _, block := range B {
 		nb := ni.processBlock(block)
@@ -334,29 +336,39 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 		b = append(b, nb)
 		ni.layerBlocks[i] = append(ni.layerBlocks[i], block.ID())
 	}
+	return b
+}
 
-	////handle Genesis
-	if i == Genesis {
-		vp := &votingPattern{id: getId(ni.layerBlocks[Genesis], Genesis), LayerID: Genesis}
-		ni.pBase = *vp
-		ni.tGood[Genesis] = *vp
-		ni.tExplicit[B[0].ID()] = make(map[mesh.LayerID]*votingPattern, K*ni.LayerSize)
-	} else if i == Genesis+1 {
-		vp := votingPattern{id: getId(ni.layerBlocks[Genesis+1], Genesis+1), LayerID: Genesis + 1}
-		for _, b := range ni.layerBlocks[Genesis] {
-			ni.tTally[vp] = make(map[mesh.BlockID]vec)
-			ni.tTally[vp][b] = vec{len(B), 0}
-			ni.tVote[vp] = make(map[mesh.BlockID]vec)
-			ni.tVote[vp][b] = vec{1, 0}
-		}
-		ni.updateBlocksSupport(b, 0)
+func (ni *ninjaTortoise) initGenesis(B []*mesh.Block, i mesh.LayerID) {
+	ni.processBlocks(B, i)
+	vp := &votingPattern{id: getId(ni.layerBlocks[Genesis], Genesis), LayerID: Genesis}
+	ni.pBase = *vp
+	ni.tGood[Genesis] = *vp
+	ni.tExplicit[B[0].ID()] = make(map[mesh.LayerID]*votingPattern, K*ni.LayerSize)
+}
+
+func (ni *ninjaTortoise) initGenPlus1(B []*mesh.Block, i mesh.LayerID) {
+	b := ni.processBlocks(B, i)
+	vp := votingPattern{id: getId(ni.layerBlocks[Genesis+1], Genesis+1), LayerID: Genesis + 1}
+	for _, b := range ni.layerBlocks[Genesis] {
+		ni.tTally[vp] = make(map[mesh.BlockID]vec)
+		ni.tTally[vp][b] = vec{len(B), 0}
+		ni.tVote[vp] = make(map[mesh.BlockID]vec)
+		ni.tVote[vp][b] = vec{1, 0}
 	}
+	ni.updateBlocksSupport(b, 0)
+}
+
+func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.LayerID { //i most recent layer
+	ni.Debug("update tables layer %d", i)
+	//initialize these tables //not in article
+	b := ni.processBlocks(B, i)
 
 	l := ni.findMinimalGoodLayer(i, b)
 
 	//from minimal good pattern to current layer //todo (including ????)
 	//update pattern tally for all good layers
-	for j := l; j < i && i > 1; j++ {
+	for j := l; j < i; j++ {
 		if p, gfound := ni.tGood[j]; gfound {
 			//init p's tally to pBase tally
 			for k, v := range ni.tTally[ni.pBase] {
@@ -371,20 +383,13 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 			ni.updateCorrectionVectors(p)
 
 			//update pattern tally for each good layer on the way
-			for k := ni.pBase.Layer() + 1; k < j; k++ {
-				if gK, found := ni.tGood[k]; found {
-					ni.updatePatternTally(ni.pBase, gK, p)
-				} else {
-					panic("whattttttt")
-				}
-			}
+			ni.updatePatternTally(j, ni.pBase, p, 0)
 
 			// for each block in p's view add the pattern votes
 			layerViewCounter := ni.forBlockInView(ni.tPattern[p], ni.pBase.Layer(), ni.addPatternVote(p))
-
 			complete := true
-			//update vote for each block between pbase and p
-			for idx := mesh.LayerID(0); idx < j; idx++ { //todo change to from start of window
+			//update vote for each block between bottom of window (??????) to p
+			for idx := ni.pBase.Layer(); idx < j; idx++ { //todo change to from start of window
 				layer, lfound := ni.layerBlocks[idx]
 				if !lfound {
 					panic("layer not found ")

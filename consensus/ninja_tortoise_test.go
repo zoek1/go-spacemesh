@@ -35,9 +35,9 @@ func TestNinjaTortoise_case1(t *testing.T) {
 	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
 	genesisId := l.Blocks()[0].ID()
-	alg.UpdateTables(l.Blocks(), Genesis)
+	alg.initGenesis(l.Blocks(), Genesis)
 	l = createLayer(l, 2, 1)
-	alg.UpdateTables(l.Blocks(), Genesis+1)
+	alg.initGenPlus1(l.Blocks(), Genesis+1)
 	for i := 0; i < 1; i++ {
 		lyr := createLayer(l, 2, 2)
 		start := time.Now()
@@ -52,56 +52,53 @@ func TestNinjaTortoise_case1(t *testing.T) {
 	alg.Debug("print all block votes for new pbase ")
 
 	assert.True(t, alg.tTally[alg.pBase][genesisId] == vec{2, 0}, "vote was %d insted of %d", alg.tTally[alg.pBase][genesisId], vec{2, 0})
-
 }
 
 func TestNinjaTortoise_case2(t *testing.T) {
 	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
-	alg.Debug("gensis block id = %d", l.Blocks()[0].ID())
 	genesisId := l.Blocks()[0].ID()
-	alg.UpdateTables(l.Blocks(), Genesis)
+	alg.initGenesis(l.Blocks(), Genesis)
 	l = createLayer(l, 2, 1)
-	alg.UpdateTables(l.Blocks(), Genesis+1)
+	alg.initGenPlus1(l.Blocks(), Genesis+1)
 	for i := 0; i < 2; i++ {
 		lyr := createLayer(l, 2, 2)
 		start := time.Now()
 		alg.UpdateTables(lyr.Blocks(), lyr.Index())
 		alg.Info("Time to process layer: %v ", time.Since(start))
 		l = lyr
+		for b, vec := range alg.tTally[alg.pBase] {
+			alg.Debug("------> votes for block %d according to complete pattern %d are %d", b, alg.pBase, vec)
+		}
 	}
 
 	alg.Debug("print all block votes for new pbase ")
-	for b, vec := range alg.tVote[alg.pBase] {
-		alg.Debug("------> votes for block %d layer %d according to complete pattern %d are %d", b, alg.blocks[b].Layer(), alg.pBase, vec)
-	}
-	assert.True(t, alg.tTally[alg.pBase][genesisId] == vec{1, 0}, "vote was %d insted of %d", alg.tVote[alg.pBase][genesisId], vec{4, 0})
+
+	assert.True(t, alg.tTally[alg.pBase][genesisId] == vec{4, 0}, "vote was %d insted of %d", alg.tTally[alg.pBase][genesisId], vec{4, 0})
 }
 
 func TestNinjaTortoise_case3(t *testing.T) {
 	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
 	genesisId := l.Blocks()[0].ID()
-	alg.UpdateTables(l.Blocks(), Genesis)
+	alg.initGenesis(l.Blocks(), Genesis)
 	l = createLayer(l, 2, 1)
-	alg.UpdateTables(l.Blocks(), Genesis+1)
-
+	alg.initGenPlus1(l.Blocks(), Genesis+1)
 	lyr := createLayer(l, 2, 2)
 	start := time.Now()
 	alg.UpdateTables(lyr.Blocks(), lyr.Index())
 	alg.Info("Time to process layer: %v ", time.Since(start))
-
-	lyr = createLayer(l, 2, 1)
+	lyr = createLayer(lyr, 2, 1)
 	start = time.Now()
 	alg.UpdateTables(lyr.Blocks(), lyr.Index())
 	alg.Info("Time to process layer: %v ", time.Since(start))
-
+	lyr = createLayer(lyr, 2, 2)
+	start = time.Now()
+	alg.UpdateTables(lyr.Blocks(), lyr.Index())
+	alg.Info("Time to process layer: %v ", time.Since(start))
 	alg.Debug("print all block votes for new pbase ")
-	for b, vec := range alg.tVote[alg.pBase] {
-		alg.Debug("------> votes for block %d according to complete pattern %d are %d", b, alg.pBase, vec)
-	}
 
-	assert.True(t, alg.tTally[alg.pBase][genesisId] == vec{3, 0}, "vote was %d insted of %d", alg.tVote[alg.pBase][genesisId], vec{3, 0})
+	assert.True(t, alg.tTally[alg.pBase][genesisId] == vec{3, 0}, "vote was %d insted of %d", alg.tTally[alg.pBase][genesisId], vec{3, 0})
 }
 
 func createLayer(prev *mesh.Layer, blocksInLayer int, patternSize int) *mesh.Layer {

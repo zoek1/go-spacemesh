@@ -38,6 +38,7 @@ func TestNinjaTortoise_case1(t *testing.T) {
 	alg.initGenesis(l.Blocks(), Genesis)
 	l = createLayer(l, 2, 1)
 	alg.initGenPlus1(l.Blocks(), Genesis+1)
+	alg.UpdateTables(l.Blocks(), l.Index())
 	for i := 0; i < 1; i++ {
 		lyr := createLayer(l, 2, 2)
 		start := time.Now()

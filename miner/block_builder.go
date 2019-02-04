@@ -1,11 +1,15 @@
 package miner
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/spacemeshos/go-spacemesh/address"
 	"github.com/spacemeshos/go-spacemesh/common"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/mesh"
+	"github.com/spacemeshos/go-spacemesh/oracle"
 	"github.com/spacemeshos/go-spacemesh/p2p"
+	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"github.com/spacemeshos/go-spacemesh/state"
 	meshSync "github.com/spacemeshos/go-spacemesh/sync"
 	"math/big"
@@ -19,37 +23,48 @@ const MaxTransactionsPerBlock = 200 //todo: move to config
 const DefaultGasLimit =10
 const DefaultGas = 1
 
+const IncomingTxProtocol = "TxGossip"
+
 type BlockBuilder struct{
+	minerID string // could be a pubkey or what ever. the identity we're claiming to be as miners.
+
 	beginRoundEvent chan mesh.LayerID
 	stopChan		chan struct{}
-	newTrans		chan *state.Transaction
+	newTrans		chan *mesh.SerializableTransaction
+	txGossipChannel chan service.GossipMessage
 	hareResult		HareResultProvider
 	transactionQueue []mesh.SerializableTransaction
 	mu sync.Mutex
 	network p2p.Service
 	weakCoinToss	WeakCoinProvider
 	orphans			OrphanBlockProvider
+	blockOracle oracle.BlockOracle
 	started			bool
 }
 
 
 
 
-func NewBlockBuilder(net p2p.Service, beginRoundEvent chan mesh.LayerID, weakCoin WeakCoinProvider,
-													orph OrphanBlockProvider, hare HareResultProvider) BlockBuilder{
+func NewBlockBuilder(minerID string, net p2p.Service, beginRoundEvent chan mesh.LayerID, weakCoin WeakCoinProvider,
+													orph OrphanBlockProvider, hare HareResultProvider, blockOracle oracle.BlockOracle) BlockBuilder{
 	return BlockBuilder{
+		minerID: minerID,
 		beginRoundEvent:beginRoundEvent,
-		stopChan:make(chan struct{}),
-		newTrans:make(chan *state.Transaction),
-		hareResult:hare,
-		transactionQueue:make([]mesh.SerializableTransaction,0,10),
-		mu:sync.Mutex{},
-		network:net,
-		weakCoinToss:weakCoin,
-		orphans:orph,
+		stopChan: make(chan struct{}),
+		newTrans: make(chan *mesh.SerializableTransaction),
+		txGossipChannel: net.RegisterGossipProtocol(IncomingTxProtocol),
+		hareResult: hare,
+		transactionQueue: make([]mesh.SerializableTransaction,0,10),
+		mu: sync.Mutex{},
+		network: net,
+		weakCoinToss: weakCoin,
+		orphans: orph,
+		blockOracle: blockOracle,
 		started: false,
 	}
+
 }
+
 
 func Transaction2SerializableTransaction(tx *state.Transaction) mesh.SerializableTransaction{
 	return mesh.SerializableTransaction{
@@ -72,6 +87,7 @@ func (t *BlockBuilder) Start() error{
 
 	t.started = true
 	go t.acceptBlockData()
+	go t.listenForTx()
 	return nil
 }
 
@@ -81,6 +97,7 @@ func (t *BlockBuilder) Stop() error{
 	if !t.started {
 		return fmt.Errorf("already stopped")
 	}
+	t.started = false
 	t.stopChan <- struct{}{}
 	return nil
 }
@@ -97,26 +114,27 @@ type OrphanBlockProvider interface {
 	GetOrphans() []mesh.BlockID
 }
 
-
-func (t *BlockBuilder) AddTransaction(nonce uint64, origin, destination common.Address, amount *big.Int) error{
+//used from external API call?
+func (t *BlockBuilder) AddTransaction(nonce uint64, origin, destination address.Address, amount *big.Int) error{
 	if !t.started{
 		return fmt.Errorf("BlockBuilderStopped")
 	}
-	t.newTrans <- state.NewTransaction(nonce,origin,destination,amount, DefaultGasLimit, big.NewInt(DefaultGas))
+	t.newTrans <- mesh.NewSerializableTransaction(nonce,origin,destination,amount, big.NewInt(DefaultGas), DefaultGasLimit)
 	return nil
 }
 
-func (t *BlockBuilder) createBlock(id mesh.LayerID, txs []mesh.SerializableTransaction) mesh.Block {
+func (t *BlockBuilder) createBlock(minerID string, id mesh.LayerID, txs []mesh.SerializableTransaction) mesh.Block {
 	res, err := t.hareResult.GetResult(id)
 	if err != nil {
 		log.Error("didnt receive hare result for layer %v", id)
 	}
 	b := mesh.Block{
+		MinerID: minerID,
 		Id :          mesh.BlockID(rand.Int63()),
 		LayerIndex:   id,
 		Data:         nil,
 		Coin:         t.weakCoinToss.GetResult(),
-		Timestamp:    time.Now(),
+		Timestamp:    time.Now().UnixNano(),
 		Txs :         txs,
 		BlockVotes : res,
 		ViewEdges:    t.orphans.GetOrphans(),
@@ -125,29 +143,53 @@ func (t *BlockBuilder) createBlock(id mesh.LayerID, txs []mesh.SerializableTrans
 	return b
 }
 
+func (t *BlockBuilder) listenForTx(){
+	for {
+		select {
+		case <-t.stopChan:
+			return
+		case data := <- t.txGossipChannel:
+			x, err := mesh.BytesAsTransaction(bytes.NewReader(data.Bytes()))
+			if err != nil {
+				log.Error("cannot parse incoming TX")
+				data.ReportValidation(IncomingTxProtocol, false)
+				break
+			}
+			data.ReportValidation(IncomingTxProtocol, true)
+			t.newTrans <- x
+		}
+	}
+}
 
 func (t *BlockBuilder) acceptBlockData() {
 	for {
 		select {
-			case <-t.stopChan:
-				t.started = false
-				return
+		case <-t.stopChan:
+			return
 
-			case id := <-t.beginRoundEvent:
-				txList := t.transactionQueue[:common.Min(len(t.transactionQueue), MaxTransactionsPerBlock)]
-				t.transactionQueue = t.transactionQueue[common.Min(len(t.transactionQueue), MaxTransactionsPerBlock):]
-				blk := t.createBlock(id, txList)
-				go func() {
-					bytes, err := mesh.BlockAsBytes(blk)
-					if err != nil {
-						log.Error("cannot serialize block %v", err)
-						return
-					}
-					t.network.Broadcast(meshSync.BlockProtocol, bytes)
-				}()
+		case id := <-t.beginRoundEvent:
 
-			case tx := <- t.newTrans:
-				t.transactionQueue = append(t.transactionQueue,Transaction2SerializableTransaction(tx))
+			if !t.blockOracle.Eligible(id, t.minerID) {
+				break
+			}
+
+			txList := t.transactionQueue[:common.Min(len(t.transactionQueue), MaxTransactionsPerBlock)]
+			t.transactionQueue = t.transactionQueue[common.Min(len(t.transactionQueue), MaxTransactionsPerBlock):]
+			blk := t.createBlock(t.minerID, id, txList)
+
+			go func() {
+				bytes, err := mesh.BlockAsBytes(blk)
+				if err != nil {
+					log.Error("cannot serialize block %v", err)
+					return
+				}
+				t.network.Broadcast(meshSync.NewBlockProtocol, bytes)
+			}()
+
+			// todo: else what do we do with all these txs ?!
+
+		case tx := <-t.newTrans:
+			t.transactionQueue = append(t.transactionQueue, *tx)
 		}
 	}
 }

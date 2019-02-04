@@ -2,10 +2,9 @@ package gossip
 
 import (
 	"github.com/gogo/protobuf/proto"
-	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p/config"
-	"github.com/spacemeshos/go-spacemesh/p2p/node"
+	"github.com/spacemeshos/go-spacemesh/p2p/p2pcrypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/pb"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"github.com/stretchr/testify/assert"
@@ -16,36 +15,44 @@ import (
 
 type mockBaseNetwork struct {
 	msgSentByPeer        map[string]uint32
-	inbox                chan service.Message
-	connSubs             []chan crypto.PublicKey
-	discSubs             []chan crypto.PublicKey
+	directInbox          chan service.DirectMessage
+	gossipInbox          chan service.GossipMessage
+	connSubs             []chan p2pcrypto.PublicKey
+	discSubs             []chan p2pcrypto.PublicKey
 	totalMsgCount        int
 	processProtocolCount int
 	msgMutex             sync.Mutex
 	pcountwg             *sync.WaitGroup
 	msgwg                *sync.WaitGroup
 	lastMsg              []byte
+	isMessageValid       bool
 }
 
 func newMockBaseNetwork() *mockBaseNetwork {
 	return &mockBaseNetwork{
 		make(map[string]uint32),
-		make(chan service.Message, 30),
-		make([]chan crypto.PublicKey, 0, 5),
-		make([]chan crypto.PublicKey, 0, 5),
+		make(chan service.DirectMessage, 30),
+		make(chan service.GossipMessage, 30),
+		make([]chan p2pcrypto.PublicKey, 0, 5),
+		make([]chan p2pcrypto.PublicKey, 0, 5),
 		0,
 		0,
 		sync.Mutex{},
 		&sync.WaitGroup{},
 		&sync.WaitGroup{},
 		[]byte(nil),
+		true,
 	}
 }
 
-func (mbn *mockBaseNetwork) SendMessage(peerPubKey string, protocol string, payload []byte) error {
+func (mbn *mockBaseNetwork) setIsMessageValid(isValid bool) {
+	mbn.isMessageValid = isValid
+}
+
+func (mbn *mockBaseNetwork) SendMessage(peerPubkey p2pcrypto.PublicKey, protocol string, payload []byte) error {
 	mbn.msgMutex.Lock()
 	mbn.lastMsg = payload
-	mbn.msgSentByPeer[peerPubKey]++
+	mbn.msgSentByPeer[peerPubkey.String()]++
 	mbn.totalMsgCount++
 	mbn.msgMutex.Unlock()
 	releaseWaiters(mbn.msgwg)
@@ -75,33 +82,48 @@ func releaseWaiters(group *sync.WaitGroup) {
 	group.Done()
 }
 
-func (mbn *mockBaseNetwork) RegisterProtocol(protocol string) chan service.Message {
-	return mbn.inbox
+func (mbn *mockBaseNetwork) RegisterDirectProtocol(protocol string) chan service.DirectMessage {
+	return mbn.directInbox
 }
 
-func (mbn *mockBaseNetwork) SubscribePeerEvents() (conn chan crypto.PublicKey, disc chan crypto.PublicKey) {
-	conn = make(chan crypto.PublicKey, 20)
-	disc = make(chan crypto.PublicKey, 20)
+func (mbn *mockBaseNetwork) RegisterGossipProtocol(protocol string) chan service.GossipMessage {
+	return mbn.gossipInbox
+}
+
+func (mbn *mockBaseNetwork) SubscribePeerEvents() (conn chan p2pcrypto.PublicKey, disc chan p2pcrypto.PublicKey) {
+	conn = make(chan p2pcrypto.PublicKey, 20)
+	disc = make(chan p2pcrypto.PublicKey, 20)
 
 	mbn.connSubs = append(mbn.connSubs, conn)
 	mbn.discSubs = append(mbn.discSubs, disc)
 	return
 }
 
-func (mbn *mockBaseNetwork) ProcessProtocolMessage(sender node.Node, protocol string, data service.Data) error {
+func (mbn *mockBaseNetwork) ProcessDirectProtocolMessage(sender p2pcrypto.PublicKey, protocol string, data service.Data) error {
 	mbn.processProtocolCount++
 	releaseWaiters(mbn.pcountwg)
 	return nil
 }
 
+func (mbn *mockBaseNetwork) ProcessGossipProtocolMessage(protocol string, data service.Data, validationCompletedChan chan service.MessageValidation) error {
+	mbn.processProtocolCount++
+	if (validationCompletedChan != nil) {
+		validationCompletedChan <- service.NewMessageValidation(data.Bytes(), protocol, mbn.isMessageValid)
+	}
+	time.Sleep(time.Millisecond) // context switch to allow gossip to handle the validation report
+	releaseWaiters(mbn.pcountwg)
+	return nil
+}
+
+
 func (mbn *mockBaseNetwork) addRandomPeers(cnt int) {
 	for i := 0; i < cnt; i++ {
-		_, pub, _ := crypto.GenerateKeyPair()
+		pub := p2pcrypto.NewRandomPubkey()
 		mbn.addRandomPeer(pub)
 	}
 }
 
-func (mbn *mockBaseNetwork) addRandomPeer(pub crypto.PublicKey) {
+func (mbn *mockBaseNetwork) addRandomPeer(pub p2pcrypto.PublicKey) {
 	for _, p := range mbn.connSubs {
 		p <- pub
 	}
@@ -114,23 +136,13 @@ func (mbn *mockBaseNetwork) totalMessageSent() int {
 	return total
 }
 
-type mockSampler struct {
-	f func(count int) []node.Node
-}
-
-func (mcs *mockSampler) SelectPeers(count int) []node.Node {
-	if mcs.f != nil {
-		return mcs.f(count)
-	}
-	return node.GenerateRandomNodesData(count)
-}
-
 type TestMessage struct {
+	sender p2pcrypto.PublicKey
 	data service.Data
 }
 
-func (tm TestMessage) Sender() node.Node {
-	return node.Node{}
+func (tm TestMessage) Sender() p2pcrypto.PublicKey {
+	return tm.sender
 }
 
 func (tm TestMessage) setData(msg service.Data) {
@@ -145,36 +157,23 @@ func (tm TestMessage) Bytes() []byte {
 	return tm.data.Bytes()
 }
 
-type testSigner struct {
-	pv crypto.PrivateKey
+func newPubkey(t *testing.T) p2pcrypto.PublicKey {
+	pubkey := p2pcrypto.NewRandomPubkey()
+	return pubkey
 }
 
-func (ms testSigner) PublicKey() crypto.PublicKey {
-	return ms.pv.GetPublicKey()
-}
-
-func (ms testSigner) Sign(data []byte) ([]byte, error) {
-	return ms.pv.Sign(data)
-}
-
-func newTestSigner(t testing.TB) testSigner {
-	pv, _, err := crypto.GenerateKeyPair()
-	assert.NoError(t, err)
-	return testSigner{pv}
-}
-
-func newTestSignedMessageData(t testing.TB, signer signer) []byte {
+func newTestMessageData(t testing.TB, authPubkey p2pcrypto.PublicKey, payload []byte, protocol string) ([]byte, *pb.ProtocolMessage) {
 	pm := &pb.ProtocolMessage{
 		Metadata: &pb.Metadata{
-			NextProtocol:  ProtocolName,
-			AuthPubKey:    signer.PublicKey().Bytes(),
+			NextProtocol:  protocol,
 			Timestamp:     time.Now().Unix(),
 			ClientVersion: protocolVer,
+			AuthPubkey:    authPubkey.Bytes(),
 		},
-		Data: &pb.ProtocolMessage_Payload{[]byte("LOL")},
+		Data: &pb.ProtocolMessage_Payload{payload},
 	}
 
-	return signedMessage(t, signer, pm).Bytes()
+	return makePayload(t, pm).Bytes(), pm
 }
 
 func addPeersAndTest(t testing.TB, num int, p *Protocol, net *mockBaseNetwork, work bool) {
@@ -209,50 +208,44 @@ lop:
 //todo : more unit tests
 
 func TestNeighborhood_AddIncomingPeer(t *testing.T) {
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, newMockBaseNetwork(), newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, newMockBaseNetwork(), newPubkey(t), log.New("tesT", "", ""))
 	n.Start()
-	_, pub, _ := crypto.GenerateKeyPair()
+	pub := p2pcrypto.NewRandomPubkey()
 	n.addPeer(pub)
 
 	assert.True(t, n.hasPeer(pub))
 	assert.Equal(t, 1, n.peersCount())
 }
 
-func signedMessage(t testing.TB, s signer, message *pb.ProtocolMessage) service.Data {
-	pmbin, err := proto.Marshal(message)
+func makePayload(t testing.TB, message *pb.ProtocolMessage) service.Data {
+	payload, err := proto.Marshal(message)
 	assert.NoError(t, err)
-	sign, err := s.Sign(pmbin)
-	assert.NoError(t, err)
-	message.Metadata.MsgSign = sign
-	finbin, err := proto.Marshal(message)
-	assert.NoError(t, err)
-	return service.DataBytes{finbin}
+	return service.DataBytes{Payload: payload}
 }
 
 func TestNeighborhood_Relay(t *testing.T) {
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 	n.Start()
 
 	addPeersAndTest(t, 20, n, net, true)
 
-	signer := newTestSigner(t)
 	pm := &pb.ProtocolMessage{
 		Metadata: &pb.Metadata{
 			NextProtocol:  ProtocolName,
-			AuthPubKey:    signer.PublicKey().Bytes(),
 			Timestamp:     time.Now().Unix(),
 			ClientVersion: protocolVer,
+			AuthPubkey:    newPubkey(t).Bytes(),
 		},
 		Data: &pb.ProtocolMessage_Payload{[]byte("LOL")},
 	}
 
-	signed := signedMessage(t, signer, pm)
+	payload := makePayload(t, pm)
 
-	var msg service.Message = TestMessage{signed}
+	var msg service.DirectMessage = TestMessage{nil, payload}
 	net.pcountwg.Add(1)
 	net.msgwg.Add(20)
-	net.inbox <- msg
+	net.directInbox <- msg
 	passOrDeadlock(t, net.pcountwg)
 	passOrDeadlock(t, net.msgwg)
 	assert.Equal(t, 1, net.processProtocolCount)
@@ -261,67 +254,59 @@ func TestNeighborhood_Relay(t *testing.T) {
 
 func TestNeighborhood_Broadcast(t *testing.T) {
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 	n.Start()
 	addPeersAndTest(t, 20, n, net, true)
 	net.msgwg.Add(20)
+	net.pcountwg.Add(1)
 
 	n.Broadcast([]byte("LOL"), "")
 	passOrDeadlock(t, net.msgwg)
-	assert.Equal(t, 0, net.processProtocolCount)
+	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 20, net.totalMessageSent())
 }
 
 func TestNeighborhood_Relay2(t *testing.T) {
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 	n.Start()
 
-	signer := newTestSigner(t)
-	pm := &pb.ProtocolMessage{
-		Metadata: &pb.Metadata{
-			NextProtocol:  ProtocolName,
-			AuthPubKey:    signer.PublicKey().Bytes(),
-			Timestamp:     time.Now().Unix(),
-			ClientVersion: protocolVer,
-		},
-		Data: &pb.ProtocolMessage_Payload{[]byte("LOL")},
-	}
-
-	signed := signedMessage(t, signer, pm)
-	var msg service.Message = TestMessage{signed}
+	msgB, _ := newTestMessageData(t, newPubkey(t), []byte("LOL1"), "protocol")
+	var msg service.DirectMessage = TestMessage{nil, 	service.DataBytes{msgB}}
 	net.pcountwg.Add(1)
-	net.inbox <- msg
+	net.directInbox <- msg
 	passOrDeadlock(t, net.pcountwg)
 	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 0, net.totalMessageSent())
 
 	addPeersAndTest(t, 20, n, net, true)
 	net.msgwg.Add(20)
-	net.inbox <- msg
+	net.directInbox <- msg
 	passOrDeadlock(t, net.msgwg)
 	assert.Equal(t, 20, net.totalMessageSent())
 }
 
 func TestNeighborhood_Broadcast2(t *testing.T) {
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 	n.Start()
 
-	msgB := newTestSignedMessageData(t, newTestSigner(t))
+	payload := []byte("LOL")
 	addPeersAndTest(t, 1, n, net, true)
-	net.msgwg.Add(1)
-	n.Broadcast(msgB, "") // dosent matter
+	net.msgwg.Add(1) // sender also handle the message
+	net.pcountwg.Add(1)
+	n.Broadcast(payload, "protocol")
 	passOrDeadlock(t, net.msgwg)
-	assert.Equal(t, 0, net.processProtocolCount)
+	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 1, net.totalMessageSent())
 
 	addPeersAndTest(t, 20, n, net, true)
 	net.msgwg.Add(20)
-	var msg service.Message = TestMessage{service.DataBytes{net.lastMsg}}
-	net.inbox <- msg
+	msgB, _ := newTestMessageData(t, newPubkey(t), payload, "protocol")
+	var msg service.DirectMessage = TestMessage{nil, service.DataBytes{msgB}}
+	net.directInbox <- msg
 	passOrDeadlock(t, net.msgwg)
-	assert.Equal(t, 0, net.processProtocolCount)
+	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 21, net.totalMessageSent())
 }
 
@@ -329,32 +314,59 @@ func TestNeighborhood_Broadcast3(t *testing.T) {
 	// todo : Fix this test, because the first message is broadcasted `Broadcast` attaches metadata to it with the current authoring timestamp
 	// to test that the the next message doesn't get processed by the protocol we must create an exact copy of the message produced at `Broadcast`
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 	n.Start()
 
 	addPeersAndTest(t, 20, n, net, true)
 
 	msgB := []byte("LOL")
 	net.msgwg.Add(20)
-	n.Broadcast(msgB, "")
+	net.pcountwg.Add(1)
+	n.Broadcast(msgB, "protocol")
 	passOrDeadlock(t, net.msgwg)
-	assert.Equal(t, 0, net.processProtocolCount)
+	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 20, net.totalMessageSent())
 
-	var msg service.Message = TestMessage{service.DataBytes{net.lastMsg}}
-	net.inbox <- msg
-	assert.Equal(t, 0, net.processProtocolCount)
+	payload, _ := newTestMessageData(t, newPubkey(t), msgB, "protocol")
+	var msg service.DirectMessage = TestMessage{nil, service.DataBytes{payload}}
+	net.directInbox <- msg
+	passOrDeadlock(t, net.msgwg)
+	assert.Equal(t, 1, net.processProtocolCount)
+	assert.Equal(t, 20, net.totalMessageSent())
+}
+
+func TestNeighborhood_Broadcast4(t *testing.T) {
+	// todo : Fix this test, because the first message is broadcasted `Broadcast` attaches metadata to it with the current authoring timestamp
+	// to test that the the next message doesn't get processed by the protocol we must create an exact copy of the message produced at `Broadcast`
+	net := newMockBaseNetwork()
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
+	n.Start()
+
+	addPeersAndTest(t, 20, n, net, true)
+
+	msgB := []byte("LOL")
+	net.msgwg.Add(20)
+	net.pcountwg.Add(1)
+	n.Broadcast(msgB, "")
+	passOrDeadlock(t, net.msgwg)
+	assert.Equal(t, 1, net.processProtocolCount)
+	assert.Equal(t, 20, net.totalMessageSent())
+
+	n.Broadcast(msgB, "")
+	passOrDeadlock(t, net.msgwg)
+	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 20, net.totalMessageSent())
 }
 
 func TestNeighborhood_Relay3(t *testing.T) {
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 	n.Start()
 
-	var msg service.Message = TestMessage{service.DataBytes{newTestSignedMessageData(t, newTestSigner(t))}}
+	payload, _ := newTestMessageData(t, newPubkey(t), []byte("LOL"), "protocol")
+	var msg service.DirectMessage = TestMessage{nil, service.DataBytes{payload}}
 	net.pcountwg.Add(1)
-	net.inbox <- msg
+	net.directInbox <- msg
 	passOrDeadlock(t, net.pcountwg)
 	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 0, net.totalMessageSent())
@@ -362,7 +374,7 @@ func TestNeighborhood_Relay3(t *testing.T) {
 	addPeersAndTest(t, 20, n, net, true)
 
 	net.msgwg.Add(20)
-	net.inbox <- msg
+	net.directInbox <- msg
 	passOrDeadlock(t, net.msgwg)
 	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 20, net.totalMessageSent())
@@ -370,7 +382,7 @@ func TestNeighborhood_Relay3(t *testing.T) {
 	addPeersAndTest(t, 1, n, net, true)
 
 	net.msgwg.Add(1)
-	net.inbox <- msg
+	net.directInbox <- msg
 	passOrDeadlock(t, net.msgwg)
 
 	assert.Equal(t, 1, net.processProtocolCount)
@@ -379,7 +391,7 @@ func TestNeighborhood_Relay3(t *testing.T) {
 
 func TestNeighborhood_Start(t *testing.T) {
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 
 	// before Start
 	addPeersAndTest(t, 20, n, net, false)
@@ -391,7 +403,7 @@ func TestNeighborhood_Start(t *testing.T) {
 
 func TestNeighborhood_Close(t *testing.T) {
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 
 	n.Start()
 	addPeersAndTest(t, 20, n, net, true)
@@ -402,31 +414,31 @@ func TestNeighborhood_Close(t *testing.T) {
 
 func TestNeighborhood_Disconnect(t *testing.T) {
 	net := newMockBaseNetwork()
-	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newTestSigner(t), log.New("tesT", "", ""))
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
 
 	n.Start()
-	_, pub1, _ := crypto.GenerateKeyPair()
+	pub1 := p2pcrypto.NewRandomPubkey()
 	n.addPeer(pub1)
-	_, pub2, _ := crypto.GenerateKeyPair()
+	pub2 := p2pcrypto.NewRandomPubkey()
 	n.addPeer(pub2)
 	assert.Equal(t, 2, n.peersCount())
 
-	msg := newTestSignedMessageData(t, newTestSigner(t))
+	msg, _ := newTestMessageData(t, newPubkey(t), []byte("LOL"), "protocol")
 
 	net.pcountwg.Add(1)
 	net.msgwg.Add(2)
-	net.inbox <- TestMessage{service.DataBytes{msg}}
+	net.directInbox <- TestMessage{nil, service.DataBytes{msg}}
 	passOrDeadlock(t, net.pcountwg)
 	passOrDeadlock(t, net.msgwg)
 	assert.Equal(t, 1, net.processProtocolCount)
 	assert.Equal(t, 2, net.totalMessageSent())
 
-	msg2 := newTestSignedMessageData(t, newTestSigner(t))
+	msg2, _ := newTestMessageData(t, newPubkey(t), []byte("LOL2"), "protocol")
 
 	n.removePeer(pub1)
 	net.pcountwg.Add(1)
 	net.msgwg.Add(1)
-	net.inbox <- TestMessage{service.DataBytes{msg2}}
+	net.directInbox <- TestMessage{nil, service.DataBytes{msg2}}
 	passOrDeadlock(t, net.pcountwg)
 	passOrDeadlock(t, net.msgwg)
 	assert.Equal(t, 2, net.processProtocolCount)
@@ -434,8 +446,68 @@ func TestNeighborhood_Disconnect(t *testing.T) {
 
 	n.addPeer(pub1)
 	net.msgwg.Add(1)
-	net.inbox <- TestMessage{service.DataBytes{msg2}}
+	net.directInbox <- TestMessage{nil, service.DataBytes{msg2}}
 	passOrDeadlock(t, net.msgwg)
 	assert.Equal(t, 2, net.processProtocolCount)
 	assert.Equal(t, 4, net.totalMessageSent())
+}
+
+func TestHash(t *testing.T) {
+	msg1 := []byte("msg1")
+	msg2 := []byte("msg2")
+	prot1 := "prot1"
+	prot2 := "prot2"
+
+	assert.NotEqual(t, calcHash(msg1, prot1), calcHash(msg1, prot2))
+	assert.NotEqual(t, calcHash(msg1, prot1), calcHash(msg2, prot1))
+}
+
+func TestMessageValidity_NotValid(t *testing.T) {
+	net := newMockBaseNetwork()
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
+	n.Start()
+
+	addPeersAndTest(t, 5, n, net, true)
+
+	msgB := []byte("LOL")
+	protocol := "protocol"
+	hash := calcHash(msgB, protocol)
+	net.msgwg.Add(5)
+	net.pcountwg.Add(1)
+	net.setIsMessageValid(false)
+	assert.Equal(t, Unknown, n.isMessageValid(hash))
+	n.Broadcast(msgB, protocol)
+	passOrDeadlock(t, net.pcountwg)
+	time.Sleep(300 * time.Millisecond)
+	assert.Equal(t, 1, net.processProtocolCount)
+	assert.Equal(t, 0, net.totalMessageSent())
+	assert.Equal(t, Invalid, n.isMessageValid(hash))
+
+	addPeersAndTest(t, 5, n, net, true)
+	n.Broadcast(msgB, protocol)
+	time.Sleep(300 * time.Millisecond)
+	assert.Equal(t, 1, net.processProtocolCount)
+	assert.Equal(t, 0, net.totalMessageSent())
+	assert.Equal(t, Invalid, n.isMessageValid(hash))
+}
+
+func TestMessageValidity_Valid(t *testing.T) {
+	net := newMockBaseNetwork()
+	n := NewProtocol(config.DefaultConfig().SwarmConfig, net, newPubkey(t), log.New("tesT", "", ""))
+	n.Start()
+
+	addPeersAndTest(t, 5, n, net, true)
+
+	msgB := []byte("LOL")
+	protocol := "protocol"
+	hash := calcHash(msgB, protocol)
+	net.msgwg.Add(5)
+	net.pcountwg.Add(1)
+	net.setIsMessageValid(true)
+	assert.Equal(t, Unknown, n.isMessageValid(hash))
+	n.Broadcast(msgB, protocol)
+	passOrDeadlock(t, net.msgwg)
+	assert.Equal(t, 1, net.processProtocolCount)
+	assert.Equal(t, 5, net.totalMessageSent())
+	assert.Equal(t, Valid, n.isMessageValid(hash))
 }

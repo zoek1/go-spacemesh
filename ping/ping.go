@@ -6,6 +6,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/p2p"
+	"github.com/spacemeshos/go-spacemesh/p2p/p2pcrypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"github.com/spacemeshos/go-spacemesh/ping/pb"
 	"sync"
@@ -14,7 +15,7 @@ import (
 
 // Pinger is an identity that does ping.
 type Pinger interface {
-	PublicKey() crypto.PublicKey
+	PublicKey() p2pcrypto.PublicKey
 }
 
 const protocol = "/ping/1.0/"
@@ -41,14 +42,14 @@ type Ping struct {
 	pending    map[crypto.UUID]chan *pb.Ping
 	pendMuxtex sync.RWMutex
 
-	ingressChannel chan service.Message
+	ingressChannel chan service.DirectMessage
 }
 
 // New creates new ping instance, receives p2p as network infra
 func New(p2p p2p.Service) *Ping {
 	p := &Ping{pending: make(map[crypto.UUID]chan *pb.Ping)}
 	p.p2p = p2p
-	p.ingressChannel = p2p.RegisterProtocol(protocol)
+	p.ingressChannel = p2p.RegisterDirectProtocol(protocol)
 	go p.readLoop()
 	return p
 }
@@ -61,7 +62,7 @@ func (p *Ping) readLoop() {
 			break
 		}
 
-		go func(msg service.Message) {
+		go func(msg service.DirectMessage) {
 			ping := &pb.Ping{}
 			err := proto.Unmarshal(msg.Bytes(), ping)
 			if err != nil {
@@ -70,7 +71,7 @@ func (p *Ping) readLoop() {
 			}
 
 			if ping.Req {
-				log.Info("Ping: Request from (%v) - Message : %v", msg.Sender().Pretty(), ping.Message)
+				log.Info("Ping: Request from (%v) - DirectMessage : %v", msg.Sender(), ping.Message)
 				err := p.handleRequest(msg.Sender(), ping)
 				if err != nil {
 					log.Error("Error handling ping request", err)
@@ -85,7 +86,7 @@ func (p *Ping) readLoop() {
 }
 
 // Ping sends actual pings to target
-func (p *Ping) Ping(target, msg string) (string, error) {
+func (p *Ping) Ping(target p2pcrypto.PublicKey, msg string) (string, error) {
 	var response string
 	reqid := crypto.NewUUID()
 	ping := &pb.Ping{
@@ -112,7 +113,7 @@ func (p *Ping) Ping(target, msg string) (string, error) {
 	return response, nil
 }
 
-func (p *Ping) sendRequest(target string, reqid crypto.UUID, ping *pb.Ping) (chan *pb.Ping, error) {
+func (p *Ping) sendRequest(target p2pcrypto.PublicKey, reqid crypto.UUID, ping *pb.Ping) (chan *pb.Ping, error) {
 	pchan := make(chan *pb.Ping)
 	p.pendMuxtex.Lock()
 	p.pending[reqid] = pchan
@@ -139,7 +140,7 @@ func (p *Ping) sendRequest(target string, reqid crypto.UUID, ping *pb.Ping) (cha
 	return pchan, nil
 }
 
-func (p *Ping) handleRequest(sender Pinger, ping *pb.Ping) error {
+func (p *Ping) handleRequest(sender p2pcrypto.PublicKey, ping *pb.Ping) error {
 	responseMutex.RLock()
 	resp, ok := responses[ping.Message]
 	responseMutex.RUnlock()
@@ -159,7 +160,7 @@ func (p *Ping) handleRequest(sender Pinger, ping *pb.Ping) error {
 		return err
 	}
 	log.Debug("Ping: Responding with %v", resp)
-	return p.p2p.SendMessage(sender.PublicKey().String(), protocol, bin)
+	return p.p2p.SendMessage(sender, protocol, bin)
 }
 
 func (p *Ping) handleResponse(ping *pb.Ping) {

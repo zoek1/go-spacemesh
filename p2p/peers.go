@@ -1,13 +1,14 @@
-package sync
+package p2p
 
 import (
-	"github.com/spacemeshos/go-spacemesh/crypto"
-	"github.com/spacemeshos/go-spacemesh/log"
-	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"sync/atomic"
+
+	"github.com/spacemeshos/go-spacemesh/log"
+	"github.com/spacemeshos/go-spacemesh/p2p/p2pcrypto"
+	"github.com/spacemeshos/go-spacemesh/p2p/service"
 )
 
-type Peer crypto.PublicKey
+type Peer p2pcrypto.PublicKey
 
 type Peers interface {
 	GetPeers() []Peer
@@ -19,10 +20,15 @@ type PeersImpl struct {
 	exit     chan struct{}
 }
 
+// NewPeersImpl creates a PeersImpl using specified parameters and returns it
+func NewPeersImpl(snapshot *atomic.Value, exit chan struct{}) *PeersImpl {
+	return &PeersImpl{snapshot: snapshot, exit: exit}
+}
+
 func NewPeers(s service.Service) Peers {
 	value := atomic.Value{}
 	value.Store(make([]Peer, 0, 20))
-	pi := &PeersImpl{snapshot: &value, exit: make(chan struct{})}
+	pi := NewPeersImpl(&value, make(chan struct{}))
 	newPeerC, expiredPeerC := s.SubscribePeerEvents()
 	go pi.listenToPeers(newPeerC, expiredPeerC)
 	return pi
@@ -36,12 +42,12 @@ func (pi PeersImpl) GetPeers() []Peer {
 	return pi.snapshot.Load().([]Peer)
 }
 
-func (pi *PeersImpl) listenToPeers(newPeerC chan crypto.PublicKey, expiredPeerC chan crypto.PublicKey) {
+func (pi *PeersImpl) listenToPeers(newPeerC chan p2pcrypto.PublicKey, expiredPeerC chan p2pcrypto.PublicKey) {
 	peerSet := make(map[Peer]bool) //set of uniq peers
 	for {
 		select {
 		case <-pi.exit:
-			log.Debug("run stoped")
+			log.Debug("run stopped")
 			return
 		case peer := <-newPeerC:
 			peerSet[peer] = true

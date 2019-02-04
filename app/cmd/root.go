@@ -21,7 +21,7 @@ func init() {
 	/** ======================== BaseConfig Flags ========================== **/
 	RootCmd.PersistentFlags().StringVarP(&config.BaseConfig.ConfigFile,
 		"config", "c", config.BaseConfig.ConfigFile, "Set Load configuration from file")
-	RootCmd.PersistentFlags().StringVarP(&config.BaseConfig.DataDir, "datadir", "d",
+	RootCmd.PersistentFlags().StringVarP(&config.BaseConfig.DataDir, "data-folder", "d",
 		config.BaseConfig.DataDir, "Specify data directory for spacemesh")
 	/** ======================== P2P Flags ========================== **/
 	RootCmd.PersistentFlags().IntVar(&config.P2P.SecurityParam, "security-param",
@@ -40,6 +40,8 @@ func init() {
 		config.P2P.NodeID, "Load node data by id (pub key) from local store")
 	RootCmd.PersistentFlags().BoolVar(&config.P2P.NewNode, "new-node",
 		config.P2P.NewNode, "Load node data by id (pub key) from local store")
+    RootCmd.PersistentFlags().IntVar(&config.P2P.BufferSize, "buffer-size",
+		config.P2P.BufferSize, "Size of the messages handler's buffer")
 	RootCmd.PersistentFlags().BoolVar(&config.P2P.SwarmConfig.Gossip, "gossip",
 		config.P2P.SwarmConfig.Gossip, "should we start a gossiping node?")
 	RootCmd.PersistentFlags().BoolVar(&config.P2P.SwarmConfig.Bootstrap, "bootstrap",
@@ -58,7 +60,7 @@ func init() {
 		config.P2P.TimeConfig.NtpQueries, "Number of ntp queries to do")
 	RootCmd.PersistentFlags().DurationVar(&config.P2P.TimeConfig.DefaultTimeoutLatency, "default-timeout-latency",
 		config.P2P.TimeConfig.DefaultTimeoutLatency, "Default timeout to ntp query")
-	RootCmd.PersistentFlags().DurationVar(&config.P2P.TimeConfig.RefreshNtpInterval, "ntp-refresh-interval",
+	RootCmd.PersistentFlags().DurationVar(&config.P2P.TimeConfig.RefreshNtpInterval, "refresh-ntp-interval",
 		config.P2P.TimeConfig.RefreshNtpInterval, "Refresh intervals to ntp")
 
 	/** ======================== API Flags ========================== **/

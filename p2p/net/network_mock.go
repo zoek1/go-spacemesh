@@ -1,8 +1,8 @@
 package net
 
 import (
-	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/log"
+	"github.com/spacemeshos/go-spacemesh/p2p/p2pcrypto"
 	"gopkg.in/op/go-logging.v1"
 	"math/rand"
 	"net"
@@ -49,9 +49,9 @@ type NetworkMock struct {
 	dialCount        int32
 	preSessionErr    error
 	preSessionCount  int32
-	regNewRemoteConn []chan NewConnectionEvent
+	regNewRemoteConn []func(NewConnectionEvent)
 	networkId        int8
-	closingConn      []chan Connection
+	closingConn      []func(Connection)
 	incomingMessages []chan IncomingMessageEvent
 	dialSessionID    []byte
 	logger           *logging.Logger
@@ -60,8 +60,8 @@ type NetworkMock struct {
 // NewNetworkMock is a mock
 func NewNetworkMock() *NetworkMock {
 	return &NetworkMock{
-		regNewRemoteConn: make([]chan NewConnectionEvent, 0),
-		closingConn:      make([]chan Connection, 0),
+		regNewRemoteConn: make([]func(NewConnectionEvent), 0, 3),
+		closingConn:      make([]func(Connection), 0, 3),
 		logger:           getTestLogger("network mock"),
 		incomingMessages: []chan IncomingMessageEvent{make(chan IncomingMessageEvent, 256)},
 	}
@@ -88,7 +88,7 @@ func (n *NetworkMock) SetDialDelayMs(delay int8) {
 }
 
 // Dial dials
-func (n *NetworkMock) Dial(address string, remotePublicKey crypto.PublicKey) (Connection, error) {
+func (n *NetworkMock) Dial(address string, remotePublicKey p2pcrypto.PublicKey) (Connection, error) {
 	atomic.AddInt32(&n.dialCount, 1)
 	time.Sleep(time.Duration(n.dialDelayMs) * time.Millisecond)
 	sID := n.dialSessionID
@@ -97,7 +97,8 @@ func (n *NetworkMock) Dial(address string, remotePublicKey crypto.PublicKey) (Co
 		rand.Read(sID)
 	}
 	conn := NewConnectionMock(remotePublicKey)
-	conn.SetSession(SessionMock{id: sID})
+	publicKey, _ := p2pcrypto.NewPubkeyFromBytes(sID)
+	conn.SetSession(SessionMock{id: publicKey})
 	return conn, n.dialErr
 }
 
@@ -107,30 +108,26 @@ func (n *NetworkMock) DialCount() int32 {
 }
 
 // SubscribeOnNewRemoteConnections subscribes on new connections
-func (n *NetworkMock) SubscribeOnNewRemoteConnections() chan NewConnectionEvent {
-	ch := make(chan NewConnectionEvent, 20)
-	n.regNewRemoteConn = append(n.regNewRemoteConn, ch)
-	return ch
+func (n *NetworkMock) SubscribeOnNewRemoteConnections(f func(event NewConnectionEvent)) {
+	n.regNewRemoteConn = append(n.regNewRemoteConn, f)
 }
 
 // PublishNewRemoteConnection and stuff
 func (n NetworkMock) PublishNewRemoteConnection(nce NewConnectionEvent) {
-	for _, ch := range n.regNewRemoteConn {
-		ch <- nce
+	for _, f := range n.regNewRemoteConn {
+		f(nce)
 	}
 }
 
 // SubscribeClosingConnections subscribes on new connections
-func (n *NetworkMock) SubscribeClosingConnections() chan Connection {
-	ch := make(chan Connection, 20)
-	n.closingConn = append(n.closingConn, ch)
-	return ch
+func (n *NetworkMock) SubscribeClosingConnections(f func(connection Connection) ) {
+	n.closingConn = append(n.closingConn, f)
 }
 
 // publishClosingConnection and stuff
 func (n NetworkMock) publishClosingConnection(con Connection) {
-	for _, ch := range n.closingConn {
-		ch <- con
+	for _, f := range n.closingConn {
+		f(con)
 	}
 }
 

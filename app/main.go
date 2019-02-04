@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"github.com/spacemeshos/go-spacemesh/common"
+	"github.com/spacemeshos/go-spacemesh/database"
+	"github.com/spacemeshos/go-spacemesh/state"
 	"github.com/spf13/pflag"
 	"os"
 	"os/signal"
@@ -135,6 +138,10 @@ func newSpacemeshApp() *SpacemeshApp {
 
 }
 
+func (app *SpacemeshApp) introduction() {
+	log.Info("Welcome to Spacemesh. Spacemesh full node is starting...")
+}
+
 // this is what he wants to execute before app starts
 // this is my persistent pre run that involves parsing the
 // toml config file
@@ -152,6 +159,8 @@ func (app *SpacemeshApp) before(cmd *cobra.Command, args []string) (err error) {
 			Cancel()
 		}
 	}()
+
+	app.introduction()
 
 	// parse the config file based on flags et al
 	err = app.ParseConfig()
@@ -249,6 +258,14 @@ func (app *SpacemeshApp) startSpacemesh(cmd *cobra.Command, args []string) {
 
 	apiConf := &app.Config.API
 
+	//rng := rand.New(mt19937.New())
+
+	db, _ := database.NewLDBDatabase("state", 0,0)
+
+	st, _ := state.New(common.Hash{}, state.NewDatabase(db))
+
+	//processor := state.NewTransactionProcessor(rng, st)
+
 	// todo: if there's no loaded account - do the new account interactive flow here
 
 	// todo: if node has no loaded coin-base account then set the node coinbase to first account
@@ -262,7 +279,7 @@ func (app *SpacemeshApp) startSpacemesh(cmd *cobra.Command, args []string) {
 	// start api servers
 	if apiConf.StartGrpcServer || apiConf.StartJSONServer {
 		// start grpc if specified or if json rpc specified
-		app.grpcAPIService = api.NewGrpcService()
+		app.grpcAPIService = api.NewGrpcService(app.P2P, st)
 		app.grpcAPIService.StartService(nil)
 	}
 

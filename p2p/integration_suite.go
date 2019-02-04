@@ -90,27 +90,32 @@ func (its *IntegrationTestSuite) SetupSuite() {
 		}()
 	}
 
-	testLog("Launched all proccess !, now Waiting")
+	testLog("Launched all processes 🎉, now waiting...")
 
 	wg.Wait()
-	testLog("Took %s to all swarms to boot up", time.Now().Sub(tm))
+	testLog("Took %s for all swarms to boot up", time.Now().Sub(tm))
 
 	// go interfaces suck with slices
 	its.Instances = swarm
 	its.boot = boot
 }
 
+func (its *IntegrationTestSuite) TearDownSuite() {
+	_, _ = its.ForAllAsync(context.Background(), func(idx int, s NodeTestInstance) error {
+		s.Shutdown()
+		return nil
+	})
+}
 
 func createP2pInstance(t testing.TB, config config.Config) *swarm {
 	port, err := node.GetUnboundedPort()
 	assert.Nil(t, err)
 	config.TCPPort = port
-	p, err := newSwarm(context.TODO(), config, true, true)
+	p, err := newSwarm(context.TODO(), config, true, false)
 	assert.Nil(t, err)
 	assert.NotNil(t, p)
 	return p
 }
-
 
 func (its *IntegrationTestSuite) ForAll(f func(idx int, s NodeTestInstance) error, filter []int) []error {
 	e := make([]error, 0)
@@ -119,6 +124,16 @@ swarms:
 		for _, j := range filter {
 			if j == i {
 				continue swarms
+			}
+		}
+		e = append(e, f(i, s))
+	}
+
+boots:
+	for i, s := range its.boot {
+		for _, j := range filter {
+			if j == i {
+				continue boots
 			}
 		}
 		e = append(e, f(i,s))
@@ -162,7 +177,6 @@ func Errors(arr []error) []int {
 	}
 	return idx
 }
-
 
 func StringIdentifiers(boot ...*swarm) []string {
 	s := make([]string, len(boot))

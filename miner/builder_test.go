@@ -3,7 +3,7 @@ package miner
 import (
 	"bytes"
 	"github.com/davecgh/go-xdr/xdr2"
-	"github.com/spacemeshos/go-spacemesh/common"
+	"github.com/spacemeshos/go-spacemesh/address"
 	"github.com/spacemeshos/go-spacemesh/mesh"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
 	"github.com/spacemeshos/go-spacemesh/state"
@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 )
-
 
 type MockCoin struct {}
 
@@ -38,6 +37,14 @@ func (m MockOrphans) GetOrphans() []mesh.BlockID{
 	return m.st
 }
 
+type mockBlockOracle struct {
+
+}
+
+func (mbo mockBlockOracle) Eligible(id mesh.LayerID, pubkey string) bool {
+	return true
+}
+
 func TestBlockBuilder_StartStop(t *testing.T) {
 
 	net := service.NewSimulator()
@@ -48,7 +55,7 @@ func TestBlockBuilder_StartStop(t *testing.T) {
 	hareRes := []mesh.BlockID{mesh.BlockID(0), mesh.BlockID(1), mesh.BlockID(2), mesh.BlockID(3)}
 	hare := MockHare{res:hareRes}
 
-	builder := NewBlockBuilder(n,beginRound, MockCoin{}, MockOrphans{st:[]mesh.BlockID{1,2,3}}, hare)
+	builder := NewBlockBuilder(n.Node.String(), n,beginRound, MockCoin{}, MockOrphans{st:[]mesh.BlockID{1,2,3}}, hare, mockBlockOracle{})
 
 	err := builder.Start()
 	assert.NoError(t, err)
@@ -62,8 +69,8 @@ func TestBlockBuilder_StartStop(t *testing.T) {
 	err = builder.Stop()
 	assert.Error(t, err)
 
-	addr1 := common.BytesToAddress([]byte{0x02})
-	addr2 := common.BytesToAddress([]byte{0x01})
+	addr1 := address.BytesToAddress([]byte{0x02})
+	addr2 := address.BytesToAddress([]byte{0x01})
 	err = builder.AddTransaction(1, addr1,addr2,big.NewInt(1))
 	assert.Error(t,err)
 }
@@ -78,13 +85,13 @@ func TestBlockBuilder_CreateBlock(t *testing.T) {
 	hareRes := []mesh.BlockID{mesh.BlockID(0), mesh.BlockID(1), mesh.BlockID(2), mesh.BlockID(3)}
 	hare := MockHare{res:hareRes}
 
-	builder := NewBlockBuilder(n,beginRound, MockCoin{}, MockOrphans{st:[]mesh.BlockID{1,2,3}}, hare)
+	builder := NewBlockBuilder(n.Node.String(), n,beginRound, MockCoin{}, MockOrphans{st:[]mesh.BlockID{1,2,3}}, hare, mockBlockOracle{})
 
 	err := builder.Start()
 	assert.NoError(t, err)
 
-	addr1 := common.BytesToAddress([]byte{0x02})
-	addr2 := common.BytesToAddress([]byte{0x01})
+	addr1 := address.BytesToAddress([]byte{0x02})
+	addr2 := address.BytesToAddress([]byte{0x01})
 
 	trans := []mesh.SerializableTransaction {
 		Transaction2SerializableTransaction(state.NewTransaction(1, addr1,addr2,big.NewInt(1), DefaultGasLimit, big.NewInt(DefaultGas))),
@@ -101,7 +108,7 @@ func TestBlockBuilder_CreateBlock(t *testing.T) {
 	go func() {beginRound <- mesh.LayerID(0) }()
 
 	select {
-		case output := <- receiver.RegisterProtocol(sync.BlockProtocol):
+		case output := <- receiver.RegisterGossipProtocol(sync.NewBlockProtocol):
 			b := mesh.Block{}
 			xdr.Unmarshal(bytes.NewBuffer(output.Bytes()), &b)
 			assert.Equal(t, hareRes, b.BlockVotes)
@@ -113,4 +120,15 @@ func TestBlockBuilder_CreateBlock(t *testing.T) {
 
 	}
 
+}
+
+func TestBlockBuilder_SerializeTrans(t *testing.T) {
+	tx := mesh.NewSerializableTransaction(0, address.BytesToAddress([]byte{0x01}), address.BytesToAddress([]byte{0x02}), big.NewInt(10), big.NewInt(10), 10)
+	buf, err := mesh.TransactionAsBytes(tx)
+	assert.NoError(t,err)
+
+	ntx, err := mesh.BytesAsTransaction(bytes.NewReader(buf))
+	assert.NoError(t,err)
+
+	assert.Equal(t, *tx ,*ntx)
 }

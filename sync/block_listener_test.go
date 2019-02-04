@@ -1,28 +1,33 @@
 package sync
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/spacemeshos/go-spacemesh/address"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/mesh"
+	"github.com/spacemeshos/go-spacemesh/p2p"
 	"github.com/spacemeshos/go-spacemesh/p2p/server"
 	"github.com/spacemeshos/go-spacemesh/p2p/service"
+	"github.com/stretchr/testify/assert"
+	"math/big"
 	"testing"
 	"time"
 )
 
 type PeersMock struct {
-	getPeers func() []Peer
+	getPeers func() []p2p.Peer
 }
 
-func (pm PeersMock) GetPeers() []Peer {
+func (pm PeersMock) GetPeers() []p2p.Peer {
 	return pm.getPeers()
 }
 
 func (pm PeersMock) Close() {
 	return
 }
-func ListenerFactory(serv server.Service, peers Peers, name string) *BlockListener {
-	nbl := NewBlockListener(serv, BlockValidatorMock{}, getMesh("TestBlockListener_"+name), 1*time.Second, 2, log.New(name, "", ""))
+func ListenerFactory(serv server.Service, peers p2p.Peers, name string) *BlockListener {
+	nbl := NewBlockListener(serv, BlockValidatorMock{}, getMesh(memoryDB, "TestBlockListener_"+name), 1*time.Second, 2, log.New(name, "", ""))
 	nbl.Peers = peers //override peers with mock
 	return nbl
 }
@@ -33,8 +38,8 @@ func TestBlockListener(t *testing.T) {
 	sim := service.NewSimulator()
 	n1 := sim.NewNode()
 	n2 := sim.NewNode()
-	bl1 := ListenerFactory(n1, PeersMock{func() []Peer { return []Peer{n2.PublicKey()} }}, "1")
-	bl2 := ListenerFactory(n2, PeersMock{func() []Peer { return []Peer{n1.PublicKey()} }}, "2")
+	bl1 := ListenerFactory(n1, PeersMock{func() []p2p.Peer { return []p2p.Peer{n2.PublicKey()} }}, "1")
+	bl2 := ListenerFactory(n2, PeersMock{func() []p2p.Peer { return []p2p.Peer{n1.PublicKey()} }}, "2")
 	bl2.Start()
 
 	block1 := mesh.NewExistingBlock(mesh.BlockID(123), 0, nil)
@@ -73,8 +78,8 @@ func TestBlockListener2(t *testing.T) {
 	n1 := sim.NewNode()
 	n2 := sim.NewNode()
 
-	bl1 := ListenerFactory(n1, PeersMock{func() []Peer { return []Peer{n2.PublicKey()} }}, "3")
-	bl2 := ListenerFactory(n2, PeersMock{func() []Peer { return []Peer{n1.PublicKey()} }}, "4")
+	bl1 := ListenerFactory(n1, PeersMock{func() []p2p.Peer { return []p2p.Peer{n2.PublicKey()} }}, "3")
+	bl2 := ListenerFactory(n2, PeersMock{func() []p2p.Peer { return []p2p.Peer{n1.PublicKey()} }}, "4")
 
 	bl2.Start()
 
@@ -130,6 +135,47 @@ func TestBlockListener2(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestBlockListener_ListenToGossipBlocks(t *testing.T) {
+	sim := service.NewSimulator()
+	n1 := sim.NewNode()
+	n2 := sim.NewNode()
+
+	bl1 := ListenerFactory(n1, PeersMock{func() []p2p.Peer { return []p2p.Peer{n2.PublicKey()} }}, "5")
+	bl1.Start()
+
+	blk := mesh.NewBlock(false, nil, time.Now(), 1)
+	tx := mesh.NewSerializableTransaction(0, address.BytesToAddress([]byte{0x01}), address.BytesToAddress([]byte{0x02}), big.NewInt(10), big.NewInt(10), 10)
+	blk.AddTransaction(tx)
+	blk.AddVote(1)
+	blk.AddView(2)
+
+	data, err := mesh.BlockAsBytes(*blk)
+	blk2, ok := mesh.BytesAsBlock(bytes.NewReader(data))
+	assert.NoError(t, ok)
+	assert.Equal(t, *blk, blk2)
+
+	assert.NoError(t, err)
+	n2.Broadcast(NewBlockProtocol, data)
+
+	timeout := time.After(5 * time.Second)
+	for {
+		select {
+		// Got a timeout! fail with a timeout error
+		case <-timeout:
+			t.Error("timed out ")
+			return
+		default:
+			if b, err := bl1.GetBlock(blk.Id); err == nil {
+				assert.Equal(t, blk, b)
+				fmt.Println("  ", b)
+				t.Log("done!")
+				return
+			}
+		}
+	}
+
 }
 
 //todo integration testing

@@ -2,6 +2,7 @@ package net
 
 import (
 	"errors"
+	"github.com/spacemeshos/go-spacemesh/p2p/p2pcrypto"
 	"time"
 
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"github.com/spacemeshos/go-spacemesh/crypto"
 	"github.com/spacemeshos/go-spacemesh/p2p/net/wire"
 	"gopkg.in/op/go-logging.v1"
-	"sync/atomic"
 )
 
 var (
@@ -36,8 +36,8 @@ type Connection interface {
 	fmt.Stringer
 
 	ID() string
-	RemotePublicKey() crypto.PublicKey
-	SetRemotePublicKey(key crypto.PublicKey)
+	RemotePublicKey() p2pcrypto.PublicKey
+	SetRemotePublicKey(key p2pcrypto.PublicKey)
 
 	RemoteAddr() net.Addr
 
@@ -56,20 +56,20 @@ type FormattedConnection struct {
 	// metadata for logging / debugging
 	id         string // uuid for logging
 	created    time.Time
-	remotePub  crypto.PublicKey
+	remotePub  p2pcrypto.PublicKey
 	remoteAddr net.Addr
 	closeChan  chan struct{}
 	formatter  wire.Formatter // format messages in some way
 	networker  networker      // network context
 	session    NetworkSession
 	closeOnce  sync.Once
-	closed     int32
+	closed     bool
 }
 
 type networker interface {
 	HandlePreSessionIncomingMessage(c Connection, msg []byte) error
 	EnqueueMessage(ime IncomingMessageEvent)
-	SubscribeClosingConnections() chan Connection
+	SubscribeClosingConnections(func(Connection))
 	publishClosingConnection(c Connection)
 	NetworkID() int8
 }
@@ -80,7 +80,8 @@ type readWriteCloseAddresser interface {
 }
 
 // Create a new connection wrapping a net.Conn with a provided connection manager
-func newConnection(conn readWriteCloseAddresser, netw networker, formatter wire.Formatter, remotePub crypto.PublicKey, log *logging.Logger) *FormattedConnection {
+func newConnection(conn readWriteCloseAddresser, netw networker, formatter wire.Formatter,
+	remotePub p2pcrypto.PublicKey, session NetworkSession, log *logging.Logger) *FormattedConnection {
 
 	// todo parametrize channel size - hard-coded for now
 	connection := &FormattedConnection{
@@ -91,8 +92,8 @@ func newConnection(conn readWriteCloseAddresser, netw networker, formatter wire.
 		remoteAddr: conn.RemoteAddr(),
 		formatter:  formatter,
 		networker:  netw,
+		session:    session,
 		closeChan:  make(chan struct{}),
-		closed:     0,
 	}
 
 	connection.formatter.Pipe(conn)
@@ -110,12 +111,12 @@ func (c *FormattedConnection) RemoteAddr() net.Addr {
 }
 
 // SetRemotePublicKey sets the remote peer's public key
-func (c *FormattedConnection) SetRemotePublicKey(key crypto.PublicKey) {
+func (c *FormattedConnection) SetRemotePublicKey(key p2pcrypto.PublicKey) {
 	c.remotePub = key
 }
 
 // RemotePublicKey returns the remote peer's public key
-func (c *FormattedConnection) RemotePublicKey() crypto.PublicKey {
+func (c *FormattedConnection) RemotePublicKey() p2pcrypto.PublicKey {
 	return c.remotePub
 }
 
@@ -153,20 +154,21 @@ func (c *FormattedConnection) Send(m []byte) error {
 // Close closes the connection (implements io.Closer). It is go safe.
 func (c *FormattedConnection) Close() {
 	c.closeOnce.Do(func() {
-		atomic.AddInt32(&c.closed, 1)
-		c.closeChan <- struct{}{}
+		close(c.closeChan)
 	})
 }
 
 // Closed Reports whether the connection was closed. It is go safe.
 func (c *FormattedConnection) Closed() bool {
-	return atomic.LoadInt32(&c.closed) > 0
+	return c.closed
 }
 
 func (c *FormattedConnection) shutdown(err error) {
-	c.logger.Info("(%v) shutdown. id=%s err=%v", c.remotePub.String(), c.id, err)
+	c.closed = true
+	if err != ErrConnectionClosed {
+		c.networker.publishClosingConnection(c)
+	}
 	c.formatter.Close()
-	c.networker.publishClosingConnection(c)
 }
 
 // Push outgoing message to the connections

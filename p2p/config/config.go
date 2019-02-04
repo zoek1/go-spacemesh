@@ -37,6 +37,7 @@ type Config struct {
 	NetworkID       int8          `mapstructure:"network-id"`
 	ResponseTimeout time.Duration `mapstructure:"response-timeout"`
 	SwarmConfig     SwarmConfig   `mapstructure:"swarm"`
+    BufferSize      int           `mapstructure:"buffer-size"`
 	TimeConfig      TimeConfig
 }
 
@@ -55,7 +56,7 @@ type TimeConfig struct {
 	MaxAllowedDrift       time.Duration `mapstructure:"max-allowed-time-drift"`
 	NtpQueries            int           `mapstructure:"ntp-queries"`
 	DefaultTimeoutLatency time.Duration `mapstructure:"default-timeout-latency"`
-	RefreshNtpInterval    time.Duration `mapstructure:"ntp-refresh-interval"`
+	RefreshNtpInterval    time.Duration `mapstructure:"refresh-ntp-interval"`
 }
 
 // DefaultConfig deines the default p2p configuration
@@ -92,5 +93,6 @@ func DefaultConfig() Config {
 		ResponseTimeout: duration("15s"),
 		SwarmConfig:     SwarmConfigValues,
 		TimeConfig:      TimeConfigValues,
+        BufferSize:      100,
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/mesh"
 	"github.com/stretchr/testify/assert"
+	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -36,10 +37,10 @@ func TestNinjaTortoise_case1(t *testing.T) {
 	l := createGenesisLayer()
 	genesisId := l.Blocks()[0].ID()
 	alg.initGenesis(l.Blocks(), Genesis)
-	l = createLayer(l, 2, 1)
+	l = createMulExplicitLayer(l.Index()+1, []*mesh.Layer{l}, 2, 1)
 	alg.initGenPlus1(l.Blocks(), Genesis+1)
 	for i := 0; i < 1; i++ {
-		lyr := createLayer(l, 2, 2)
+		lyr := createMulExplicitLayer(l.Index()+1, []*mesh.Layer{l}, 2, 2)
 		start := time.Now()
 		alg.UpdateTables(lyr.Blocks(), lyr.Index())
 		alg.Info("Time to process layer: %v ", time.Since(start))
@@ -54,15 +55,17 @@ func TestNinjaTortoise_case1(t *testing.T) {
 	assert.True(t, alg.tTally[alg.pBase][genesisId] == vec{2, 0}, "vote was %d insted of %d", alg.tTally[alg.pBase][genesisId], vec{2, 0})
 }
 
+//vote explicitly only for previous layer
+//correction vectors have no affect here
 func TestNinjaTortoise_case2(t *testing.T) {
 	alg := NewNinjaTortoise(2)
 	l := createGenesisLayer()
 	genesisId := l.Blocks()[0].ID()
 	alg.initGenesis(l.Blocks(), Genesis)
-	l = createLayer(l, 2, 1)
+	l = createMulExplicitLayer(l.Index()+1, []*mesh.Layer{l}, 2, 1)
 	alg.initGenPlus1(l.Blocks(), Genesis+1)
-	for i := 0; i < 10; i++ {
-		lyr := createLayer(l, 2, 2)
+	for i := 0; i < 30; i++ {
+		lyr := createMulExplicitLayer(l.Index()+1, []*mesh.Layer{l}, 2, 2)
 		start := time.Now()
 		alg.UpdateTables(lyr.Blocks(), lyr.Index())
 		alg.Info("Time to process layer: %v ", time.Since(start))
@@ -72,6 +75,61 @@ func TestNinjaTortoise_case2(t *testing.T) {
 		}
 		assert.True(t, alg.tTally[alg.pBase][genesisId] == vec{2 + 2*i, 0}, "lyr %d tally was %d insted of %d", lyr.Index(), alg.tTally[alg.pBase][genesisId], vec{2 + 2*i, 0})
 	}
+}
+
+//vote explicitly for two previous layers
+//correction vectors compensate for double count
+func TestNinjaTortoise_case3(t *testing.T) {
+	alg := NewNinjaTortoise(2)
+	l := createGenesisLayer()
+	genesisId := l.Blocks()[0].ID()
+	alg.initGenesis(l.Blocks(), Genesis)
+	l2 := l
+	l = createMulExplicitLayer(l.Index()+1, []*mesh.Layer{l}, 2, 1)
+	alg.initGenPlus1(l.Blocks(), Genesis+1)
+
+	for i := 0; i < 30; i++ {
+		lyr := createMulExplicitLayer(l.Index()+1, []*mesh.Layer{l, l2}, 2, 2)
+		start := time.Now()
+		alg.UpdateTables(lyr.Blocks(), lyr.Index())
+		alg.Info("Time to process layer: %v ", time.Since(start))
+		l2 = l
+		l = lyr
+		for b, vec := range alg.tTally[alg.pBase] {
+			alg.Debug("------> tally for block %d according to complete pattern %d are %d", b, alg.pBase, vec)
+		}
+		assert.True(t, alg.tTally[alg.pBase][genesisId] == vec{2 + 2*i, 0}, "lyr %d tally was %d insted of %d", lyr.Index(), alg.tTally[alg.pBase][genesisId], vec{2 + 2*i, 0})
+	}
+}
+
+func createMulExplicitLayer(index mesh.LayerID, prev []*mesh.Layer, blocksInLayer int, patternSize int) *mesh.Layer {
+	ts := time.Now()
+	coin := false
+	// just some random Data
+	data := []byte(crypto.UUIDString())
+	l := mesh.NewLayer(index)
+	var patterns [][]int
+	for _, l := range prev {
+		blocks := l.Blocks()
+		blocksInPrevLayer := len(blocks)
+		patterns = append(patterns, chooseRandomPattern(blocksInPrevLayer, int(math.Min(float64(blocksInPrevLayer), float64(patternSize)))))
+	}
+
+	for i := 0; i < blocksInLayer; i++ {
+		bl := mesh.NewBlock(coin, data, ts, 1)
+		for idx, pat := range patterns {
+			for _, id := range pat {
+				b := prev[idx].Blocks()[id]
+				bl.AddVote(mesh.BlockID(b.Id))
+			}
+		}
+		for _, prevBloc := range prev[len(prev)-1].Blocks() {
+			bl.AddView(mesh.BlockID(prevBloc.Id))
+		}
+		l.AddBlock(bl)
+	}
+	log.Info("Created layer Id %v", l.Index())
+	return l
 }
 
 func createLayer(prev *mesh.Layer, blocksInLayer int, patternSize int) *mesh.Layer {

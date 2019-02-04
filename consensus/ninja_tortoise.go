@@ -98,14 +98,14 @@ func (ni *ninjaTortoise) processBlock(b *mesh.Block) *ninjaBlock {
 	patterns := make(map[mesh.LayerID][]mesh.BlockID)
 	for _, bid := range b.BlockVotes {
 		ni.Debug("block votes %d", bid)
-		b, found := ni.blocks[bid]
+		bl, found := ni.blocks[bid]
 		if !found {
 			panic("unknown block!, something went wrong ")
 		}
-		if _, found := patterns[b.Layer()]; !found {
-			patterns[b.Layer()] = make([]mesh.BlockID, 0, ni.LayerSize)
+		if _, found := patterns[bl.Layer()]; !found {
+			patterns[bl.Layer()] = make([]mesh.BlockID, 0, ni.LayerSize)
 		}
-		patterns[b.Layer()] = append(patterns[b.Layer()], bid)
+		patterns[bl.Layer()] = append(patterns[bl.Layer()], bl.ID())
 	}
 
 	nb := &ninjaBlock{Block: *b}
@@ -115,10 +115,10 @@ func (ni *ninjaTortoise) processBlock(b *mesh.Block) *ninjaBlock {
 	}
 
 	var effective *votingPattern
+	nb.BlockVoteMap = make(map[mesh.LayerID]*votingPattern, K)
 	for layerId, v := range patterns {
 		vp := votingPattern{id: getId(v), LayerID: layerId}
 		ni.tPattern[vp] = v
-		nb.BlockVoteMap = make(map[mesh.LayerID]*votingPattern, K)
 		nb.BlockVoteMap[layerId] = &vp
 		if effective == nil || layerId >= effective.Layer() {
 			effective = &vp
@@ -428,8 +428,8 @@ func (ni *ninjaTortoise) UpdateTables(B []*mesh.Block, i mesh.LayerID) mesh.Laye
 			// update completeness of p
 			if _, found := ni.tComplete[p]; complete && !found {
 				ni.tComplete[p] = struct{}{}
-				ni.Debug("found new complete and good pattern for layer %d pattern %d with %d support ", l, p.id, ni.tSupport[p])
 				ni.pBase = p
+				ni.Debug("found new complete and good pattern for layer %d pattern %d with %d support ", l, p.id, ni.tSupport[p])
 			}
 		}
 	}

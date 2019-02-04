@@ -78,7 +78,7 @@ func TestMockHashOracle_Role(t *testing.T) {
 		}
 	}
 
-	if counter * 3 < committeeSize { // allow only deviation
+	if counter*3 < committeeSize { // allow only deviation
 		t.Errorf("Comity size error. Expected: %v Actual: %v", committeeSize, counter)
 		t.Fail()
 	}
@@ -90,4 +90,63 @@ func TestMockHashOracle_calcThreshold(t *testing.T) {
 	oracle.Register(generateSigning(t).Verifier().String())
 	assert.Equal(t, uint32(math.MaxUint32/2), oracle.calcThreshold(1))
 	assert.Equal(t, uint32(math.MaxUint32), oracle.calcThreshold(2))
+}
+
+func TestFixedRolacle_Eligible(t *testing.T) {
+	oracle := newFixedRolacle(numOfClients)
+	for i := 0; i < numOfClients-1; i++ {
+		oracle.Register(NewMockSigning().Verifier().String())
+	}
+	v := NewMockSigning().Verifier()
+	oracle.Register(v.String())
+
+	res := oracle.Eligible(nil, 1, 10, v.String(), nil)
+	assert.True(t, res == oracle.Eligible(nil, 1, 10, v.String(), nil))
+}
+
+func TestFixedRolacle_Eligible2(t *testing.T) {
+	pubs := make([]string, 0, numOfClients)
+	oracle := newFixedRolacle(numOfClients)
+	for i := 0; i < numOfClients; i++ {
+		s := NewMockSigning().Verifier().String()
+		pubs = append(pubs, s)
+		oracle.Register(s)
+	}
+
+	count := 0
+	for _, p := range pubs {
+		if oracle.Eligible(nil, 1, 10, p, nil) {
+			count++
+		}
+	}
+
+	assert.Equal(t, 10, count)
+
+	count = 0
+	for _, p := range pubs {
+		if oracle.Eligible(nil, 1, 20, p, nil) {
+			count++
+		}
+	}
+
+	assert.Equal(t, 10, count)
+}
+
+func TestFixedRolacle_Eligible3(t *testing.T) {
+	oracle := newFixedRolacle(2)
+	s1 := NewMockSigning().Verifier().String()
+	oracle.Register(s1)
+
+	s2 := NewMockSigning().Verifier().String()
+	oracle.Register(s2)
+
+	res1 := true
+	res2 := true
+	for i := 0;i<10;i++ {
+		res1 = res1 != oracle.Eligible(nil, i, 1, s1, nil)
+		res2 = res2 != oracle.Eligible(nil, i, 1, s2, nil)
+	}
+
+	assert.False(t, res1)
+	assert.False(t, res2)
 }

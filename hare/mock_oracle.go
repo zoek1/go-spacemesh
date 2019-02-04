@@ -113,23 +113,76 @@ func (mock *MockHashOracle) Eligible(instanceID *InstanceId, K int, committeeSiz
 	return false
 }
 
-type MockStaticOracle struct {
-	roles       map[uint32]Role
-	r           uint32
-	defaultSize int
-	hasLeader   bool
-	mutex       sync.Mutex
+type FixedRolacle struct {
+	clients map[string]struct{}
+	emaps   map[int]map[string]struct{}
+	mutex   sync.Mutex
+	mapRW   sync.RWMutex
 }
 
-func NewMockStaticOracle(defaultSize int) *MockStaticOracle {
-	static := &MockStaticOracle{}
-	static.roles = make(map[uint32]Role, defaultSize)
-	static.defaultSize = defaultSize
-	static.hasLeader = false
+func newFixedRolacle(defaultSize int) *FixedRolacle {
+	rolacle := &FixedRolacle{}
+	rolacle.clients = make(map[string]struct{}, defaultSize)
+	rolacle.emaps = make(map[int]map[string]struct{}, defaultSize) // actually shouldn't expect same size
 
-	return static
+	return rolacle
 }
 
-func (static *MockStaticOracle) Role(r uint32, proof Signature) Role {
-	return roleFromRoundCounter(r)
+func (fo *FixedRolacle) Register(client string) {
+	fo.mutex.Lock()
+
+	if _, exist := fo.clients[client]; exist {
+		fo.mutex.Unlock()
+		return
+	}
+
+	fo.clients[client] = struct{}{}
+	fo.mutex.Unlock()
+}
+
+func (fo *FixedRolacle) Unregister(client string) {
+	fo.mutex.Lock()
+	delete(fo.clients, client)
+	fo.mutex.Unlock()
+}
+
+func generateEligibility(clients map[string]struct{}, size int) map[string]struct{} {
+	emap := make(map[string]struct{}, size)
+
+	i := 0
+	for k := range clients { // randomly pass on clients
+		if i == size { // pick exactly size
+			break
+		}
+
+		emap[k] = struct{}{}
+		i++
+	}
+
+	return emap
+}
+
+func (fo *FixedRolacle) Eligible(instanceID *InstanceId, K int, committeeSize int, pubKey string, proof []byte) bool {
+	fo.mapRW.RLock()
+	total := len(fo.clients)
+	fo.mapRW.RUnlock()
+
+	// normalize committee size
+	size := committeeSize
+	if committeeSize > total {
+		log.Warning("committee size bigger than the number of clients")
+		size = total
+	}
+
+	fo.mapRW.Lock()
+	// generate if not exist for the requested K
+	if _, exist := fo.emaps[K]; !exist {
+		fo.emaps[K] = generateEligibility(fo.clients, size)
+	}
+	fo.mapRW.Unlock()
+
+	// get eligibility result
+	_, exist := fo.emaps[K][pubKey]
+
+	return exist
 }

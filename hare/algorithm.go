@@ -217,9 +217,15 @@ func (proc *ConsensusProcess) validateRole(m *pb.HareMessage) bool {
 
 	// TODO: validate role proof sig
 
+	verifier, err := NewVerifier(m.PubKey)
+	if err != nil {
+		log.Error("Could not build verifier")
+		return false
+	}
+
 	// validate role
-	if !proc.oracle.Eligible(&proc.instanceId, int(m.Message.K), proc.expectedCommitteeSize(m.Message.K), proc.signing.Verifier().String(), Signature(m.Message.RoleProof)) {
-		log.Warning("Role validation failed")
+	if !proc.oracle.Eligible(&proc.instanceId, int(m.Message.K), proc.expectedCommitteeSize(m.Message.K), verifier.String(), Signature(m.Message.RoleProof)) {
+		log.Warning("PubKey %v is not eligible for the claimed round (%v)", verifier.String(), m.Message.K)
 		return false
 	}
 

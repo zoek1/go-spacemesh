@@ -142,11 +142,41 @@ func TestFixedRolacle_Eligible3(t *testing.T) {
 
 	res1 := true
 	res2 := true
-	for i := 0;i<10;i++ {
+	for i := 0; i < 10; i++ {
 		res1 = res1 != oracle.Eligible(nil, i, 1, s1, nil)
 		res2 = res2 != oracle.Eligible(nil, i, 1, s2, nil)
 	}
 
 	assert.False(t, res1)
 	assert.False(t, res2)
+}
+
+func TestFixedRolacle_Range(t *testing.T) {
+	oracle := newFixedRolacle(numOfClients)
+	pubs := make([]string, 0, numOfClients)
+	for i := 0; i < numOfClients; i++ {
+		s := NewMockSigning().Verifier().String()
+		pubs = append(pubs, s)
+		oracle.Register(s)
+	}
+
+	count := 0
+	for _, p := range pubs {
+		if oracle.Eligible(nil, 1, numOfClients, p, nil) {
+			count++
+		}
+	}
+
+	// check all eligible
+	assert.Equal(t, numOfClients, count)
+
+	count = 0
+	for _, p := range pubs {
+		if oracle.Eligible(nil, 2, 0, p, nil) {
+			count++
+		}
+	}
+
+	// check all not eligible
+	assert.Equal(t, 0, count)
 }

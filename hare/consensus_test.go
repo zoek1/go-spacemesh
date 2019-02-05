@@ -11,6 +11,11 @@ import (
 // Test the consensus process as a whole
 
 var skipBlackBox = false
+const (
+	v50=50
+	v20=20
+	v10=10
+)
 
 type HareSuite struct {
 	termination Closer
@@ -137,6 +142,28 @@ func createConsensusProcess(cfg config.Config, oracle Rolacle, network p2p.Servi
 	return proc
 }
 
+func TestConsensusFixedOracle(t *testing.T) {
+	test := newConsensusTest()
+
+	cfg := config.Config{N: 16, F: 8, SetSize: 1, RoundDuration: time.Second * time.Duration(1)}
+	sim := service.NewSimulator()
+	test.initialSets = make([]*Set, v20)
+	set1 := NewSetFromValues(value1)
+	test.fill(set1, 0, v20-1)
+	test.honestSets = []*Set{set1}
+	oracle := newFixedRolacle(v20)
+	i := 0
+	creationFunc := func() {
+		s := sim.NewNode()
+		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
+		test.procs = append(test.procs, proc)
+		i++
+	}
+	test.Create(v20, creationFunc)
+	test.Start()
+	test.WaitForTimedTermination(t, 30*time.Second)
+}
+
 func TestSingleValueForHonestSet(t *testing.T) {
 	if skipBlackBox {
 		t.Skip()
@@ -146,11 +173,11 @@ func TestSingleValueForHonestSet(t *testing.T) {
 
 	cfg := config.Config{N: 50, F: 25, SetSize: 1, RoundDuration: time.Second * time.Duration(1)}
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, cfg.N)
+	test.initialSets = make([]*Set, v50)
 	set1 := NewSetFromValues(value1)
-	test.fill(set1, 0, cfg.N-1)
+	test.fill(set1, 0, v50-1)
 	test.honestSets = []*Set{set1}
-	oracle := NewMockHashOracle(cfg.N)
+	oracle := NewMockHashOracle(v50)
 	i := 0
 	creationFunc := func() {
 		s := sim.NewNode()
@@ -158,7 +185,7 @@ func TestSingleValueForHonestSet(t *testing.T) {
 		test.procs = append(test.procs, proc)
 		i++
 	}
-	test.Create(cfg.N, creationFunc)
+	test.Create(v50, creationFunc)
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)
 }
@@ -173,7 +200,7 @@ func TestAllDifferentSet(t *testing.T) {
 
 	cfg := config.Config{N: 10, F: 5, SetSize: 5, RoundDuration: time.Second * time.Duration(1)}
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, cfg.N)
+	test.initialSets = make([]*Set, v10)
 
 	base := NewSetFromValues(value1, value2)
 	test.initialSets[0] = base
@@ -187,7 +214,7 @@ func TestAllDifferentSet(t *testing.T) {
 	test.initialSets[8] = NewSetFromValues(value1, value2, value10)
 	test.initialSets[9] = NewSetFromValues(value1, value2, value3, value4)
 	test.honestSets = []*Set{base}
-	oracle := NewMockHashOracle(cfg.N)
+	oracle := NewMockHashOracle(v10)
 	i := 0
 	creationFunc := func() {
 		s := sim.NewNode()
@@ -195,7 +222,7 @@ func TestAllDifferentSet(t *testing.T) {
 		test.procs = append(test.procs, proc)
 		i++
 	}
-	test.Create(cfg.N, creationFunc)
+	test.Create(v10, creationFunc)
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)
 }
@@ -209,15 +236,15 @@ func TestSndDelayedDishonest(t *testing.T) {
 
 	cfg := config.Config{N: 50, F: 25, SetSize: 5, RoundDuration: time.Second * time.Duration(2)}
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, cfg.N)
+	test.initialSets = make([]*Set, v50)
 	honest1 := NewSetFromValues(value1, value2, value4, value5)
 	honest2 := NewSetFromValues(value1, value3, value4, value6)
 	dishonest := NewSetFromValues(value3, value5, value6, value7)
 	test.fill(honest1, 0, 15)
-	test.fill(honest2, 16, cfg.N/2)
-	test.fill(dishonest, cfg.N/2+1, cfg.N-1)
+	test.fill(honest2, 16, v50/2)
+	test.fill(dishonest, v50/2+1, v50-1)
 	test.honestSets = []*Set{honest1, honest2}
-	oracle := NewMockHashOracle(cfg.N)
+	oracle := NewMockHashOracle(v50)
 	i := 0
 	honestFunc := func() {
 		s := sim.NewNode()
@@ -227,7 +254,7 @@ func TestSndDelayedDishonest(t *testing.T) {
 	}
 
 	// create honest
-	test.Create(cfg.N/2+1, honestFunc)
+	test.Create(v50/2+1, honestFunc)
 
 	// create dishonest
 	dishonestFunc := func() {
@@ -236,7 +263,7 @@ func TestSndDelayedDishonest(t *testing.T) {
 		test.dishonest = append(test.dishonest, proc)
 		i++
 	}
-	test.Create(cfg.N/2-1, dishonestFunc)
+	test.Create(v50/2-1, dishonestFunc)
 
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)
@@ -252,15 +279,15 @@ func TestRecvDelayedDishonest(t *testing.T) {
 
 	cfg := config.Config{N: 50, F: 25, SetSize: 5, RoundDuration: time.Second * time.Duration(2)}
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, cfg.N)
+	test.initialSets = make([]*Set, v50)
 	honest1 := NewSetFromValues(value1, value2, value4, value5)
 	honest2 := NewSetFromValues(value1, value3, value4, value6)
 	dishonest := NewSetFromValues(value3, value5, value6, value7)
 	test.fill(honest1, 0, 15)
-	test.fill(honest2, 16, cfg.N/2)
-	test.fill(dishonest, cfg.N/2+1, cfg.N-1)
+	test.fill(honest2, 16, v50/2)
+	test.fill(dishonest, v50/2+1, v50-1)
 	test.honestSets = []*Set{honest1, honest2}
-	oracle := NewMockHashOracle(cfg.N)
+	oracle := NewMockHashOracle(v50)
 	i := 0
 	honestFunc := func() {
 		s := sim.NewNode()
@@ -270,7 +297,7 @@ func TestRecvDelayedDishonest(t *testing.T) {
 	}
 
 	// create honest
-	test.Create(cfg.N/2+1, honestFunc)
+	test.Create(v50/2+1, honestFunc)
 
 	// create dishonest
 	dishonestFunc := func() {
@@ -279,7 +306,7 @@ func TestRecvDelayedDishonest(t *testing.T) {
 		test.dishonest = append(test.dishonest, proc)
 		i++
 	}
-	test.Create(cfg.N/2-1, dishonestFunc)
+	test.Create(v50/2-1, dishonestFunc)
 
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)

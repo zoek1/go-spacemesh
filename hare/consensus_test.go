@@ -234,15 +234,15 @@ func TestSndDelayedDishonest(t *testing.T) {
 
 	test := newConsensusTest()
 
-	cfg := config.Config{N: 50, F: 25, SetSize: 5, RoundDuration: time.Second * time.Duration(2)}
+	cfg := config.Config{N: 40, F: 20, SetSize: 5, RoundDuration: time.Second * time.Duration(2)}
 	sim := service.NewSimulator()
 	test.initialSets = make([]*Set, v50)
 	honest1 := NewSetFromValues(value1, value2, value4, value5)
 	honest2 := NewSetFromValues(value1, value3, value4, value6)
 	dishonest := NewSetFromValues(value3, value5, value6, value7)
 	test.fill(honest1, 0, 15)
-	test.fill(honest2, 16, v50/2)
-	test.fill(dishonest, v50/2+1, v50-1)
+	test.fill(honest2, 16, v50/2+1)
+	test.fill(dishonest, v50/2+2, v50-1)
 	test.honestSets = []*Set{honest1, honest2}
 	oracle := NewMockHashOracle(v50)
 	i := 0
@@ -258,7 +258,7 @@ func TestSndDelayedDishonest(t *testing.T) {
 
 	// create dishonest
 	dishonestFunc := func() {
-		s := sim.NewFaulty(true, 5, 0) // only broadcast delay
+		s := sim.NewFaulty(true, 6, 0) // only broadcast delay
 		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
 		test.dishonest = append(test.dishonest, proc)
 		i++
@@ -277,15 +277,15 @@ func TestRecvDelayedDishonest(t *testing.T) {
 
 	test := newConsensusTest()
 
-	cfg := config.Config{N: 50, F: 25, SetSize: 5, RoundDuration: time.Second * time.Duration(2)}
+	cfg := config.Config{N: 40, F: 20, SetSize: 5, RoundDuration: time.Second * time.Duration(2)}
 	sim := service.NewSimulator()
 	test.initialSets = make([]*Set, v50)
 	honest1 := NewSetFromValues(value1, value2, value4, value5)
 	honest2 := NewSetFromValues(value1, value3, value4, value6)
 	dishonest := NewSetFromValues(value3, value5, value6, value7)
 	test.fill(honest1, 0, 15)
-	test.fill(honest2, 16, v50/2)
-	test.fill(dishonest, v50/2+1, v50-1)
+	test.fill(honest2, 16, 2*v50/3)
+	test.fill(dishonest, 2*v50/3+1, v50-1)
 	test.honestSets = []*Set{honest1, honest2}
 	oracle := NewMockHashOracle(v50)
 	i := 0
@@ -301,7 +301,7 @@ func TestRecvDelayedDishonest(t *testing.T) {
 
 	// create dishonest
 	dishonestFunc := func() {
-		s := sim.NewFaulty(true, 0, 10) // delay rcv
+		s := sim.NewFaulty(true, 0, 6) // delay rcv
 		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
 		test.dishonest = append(test.dishonest, proc)
 		i++

@@ -171,7 +171,7 @@ func TestConsensusFixedOracle(t *testing.T) {
 	test.initialSets = make([]*Set, totalNodes)
 	set1 := NewSetFromValues(value1)
 	test.fill(true, set1, 0, totalNodes-1)
-	oracle := newFixedRolacle(totalNodes)
+	oracle := newFixedRolacle()
 	i := 0
 	creationFunc := func() {
 		s := sim.NewNode()
@@ -196,7 +196,7 @@ func TestSingleValueForHonestSet(t *testing.T) {
 	test.initialSets = make([]*Set, totalNodes)
 	set1 := NewSetFromValues(value1)
 	test.fill(true, set1, 0, totalNodes-1)
-	oracle := newFixedRolacle(totalNodes)
+	oracle := newFixedRolacle()
 	i := 0
 	creationFunc := func() {
 		s := sim.NewNode()
@@ -235,7 +235,7 @@ func TestAllDifferentSet(t *testing.T) {
 		test.honestSets = append(test.honestSets, test.initialSets[i])
 	}
 
-	oracle := newFixedRolacle(totalNodes)
+	oracle := newFixedRolacle()
 	i := 0
 	creationFunc := func() {
 		s := sim.NewNode()
@@ -265,7 +265,7 @@ func TestSndDelayedDishonest(t *testing.T) {
 	test.fill(true, honest2, 16, totalNodes/2+1)
 	test.fill(false, dishonest, totalNodes/2+2, totalNodes-1)
 
-	oracle := newFixedRolacle(totalNodes)
+	oracle := newFixedRolacle()
 	i := 0
 	honestFunc := func() {
 		s := sim.NewNode()
@@ -307,7 +307,7 @@ func TestRecvDelayedDishonest(t *testing.T) {
 	test.fill(true, honest2, 16, 2*totalNodes/3)
 	test.fill(true, dishonest, 2*totalNodes/3+1, totalNodes-1)
 
-	oracle := newFixedRolacle(totalNodes)
+	oracle := newFixedRolacle()
 	i := 0
 	honestFunc := func() {
 		s := sim.NewNode()

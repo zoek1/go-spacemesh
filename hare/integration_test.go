@@ -45,15 +45,14 @@ func Test_16Nodes_HareIntegrationSuite(t *testing.T) {
 	set1 := NewSetFromValues(value1, value2)
 	set2 := NewSetFromValues(value1)
 	his.initialSets = make([]*Set, cfg.N)
-	his.fill(set1, 0, 10)
-	his.fill(set2, 11, cfg.N-1)
-	his.honestSets = []*Set{set1}
+	his.fill(true, set1, 0, 10)
+	his.fill(true, set2, 11, cfg.N-1)
 	oracle := newFixedRolacle(cfg.N)
 	his.BeforeHook = func(idx int, s p2p.NodeTestInstance) {
 		broker := NewBroker(s)
 		output := make(chan TerminationOutput, 1)
 		signing := NewMockSigning()
-		oracle.Register(signing.Verifier().String())
+		oracle.Register(true, signing.Verifier().String())
 		proc := NewConsensusProcess(cfg, *instanceId1, his.initialSets[idx], oracle, signing, s, output)
 		broker.Register(proc)
 		broker.Start()
@@ -96,17 +95,17 @@ func Test_20Nodes_HareIntegrationSuite(t *testing.T) {
 	set3 := NewSetFromValues(value2, value3, value4, value5)
 
 	his.initialSets = make([]*Set, cfg.N)
-	his.fill(set1, 0, 5)
-	his.fill(set2, 6, 12)
-	his.fill(set3, 13, cfg.N-1)
-	his.honestSets = []*Set{set1, set2, set3}
+	his.fill(true, set1, 0, 5)
+	his.fill(true, set2, 6, 12)
+	his.fill(true, set3, 13, cfg.N-1)
+
 	oracle := newFixedRolacle(cfg.N)
 	his.BeforeHook = func(idx int, s p2p.NodeTestInstance) {
 		log.Info("Starting instance %v", idx)
 		broker := NewBroker(s)
 		output := make(chan TerminationOutput, 1)
 		signing := NewMockSigning()
-		oracle.Register(signing.Verifier().String())
+		oracle.Register(true, signing.Verifier().String())
 		proc := NewConsensusProcess(cfg, *instanceId1, his.initialSets[idx], oracle, signing, s, output)
 		broker.Register(proc)
 		broker.Start()

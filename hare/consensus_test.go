@@ -11,11 +11,11 @@ import (
 // Test the consensus process as a whole
 
 var skipBlackBox = false
-const (
-	v50=50
-	v20=20
-	v10=10
-)
+
+type fullRolacle interface {
+	Registrable
+	Rolacle
+}
 
 type HareSuite struct {
 	termination Closer
@@ -25,6 +25,7 @@ type HareSuite struct {
 	honestSets  []*Set // initial sets of honest
 	outputs     []*Set
 	name        string
+	cfg         config.Config
 }
 
 func newHareSuite() *HareSuite {
@@ -35,9 +36,13 @@ func newHareSuite() *HareSuite {
 	return hs
 }
 
-func (his *HareSuite) fill(set *Set, begin int, end int) {
+func (his *HareSuite) fill(isHonest bool, set *Set, begin int, end int) {
 	for i := begin; i <= end; i++ {
 		his.initialSets[i] = set
+
+		if isHonest {
+			his.honestSets = append(his.honestSets, set)
+		}
 	}
 }
 
@@ -77,26 +82,40 @@ func (his *HareSuite) checkResult(t *testing.T) {
 		}
 	}
 
-	// build intersection
-	inter := u.Intersection(his.honestSets[0])
-	for i := 1; i < len(his.honestSets); i++ {
-		inter = inter.Intersection(his.honestSets[i])
+	// build validity 1 values
+	validity1 := NewEmptySet(his.cfg.SetSize)
+	ref := NewRefCountTracker(his.cfg.SetSize)
+	for _, s := range his.honestSets {
+		for _, v := range s.values {
+			ref.Track(v)
+			if ref.CountStatus(v) >= uint32(his.cfg.F+1) {
+				validity1.Add(v)
+			}
+		}
 	}
 
-	// check that the output contains the intersection
-	if !inter.IsSubSetOf(his.outputs[0]) {
-		t.Error("Validity 1 failed: output does not contain the intersection of honest parties")
+	// check that the output contains validity1
+	if !validity1.IsSubSetOf(his.outputs[0]) {
+		t.Errorf("Validity 1 failed: output does not contain the intersection of honest parties. Expected %v to be a subset of %v", validity1, his.outputs[0])
 	}
 
-	// build union
-	union := his.honestSets[0]
-	for i := 1; i < len(his.honestSets); i++ {
-		union = union.Union(his.honestSets[i])
+	// build validity 2 values
+	validity2 := NewEmptySet(his.cfg.SetSize)
+	ref = NewRefCountTracker(his.cfg.SetSize)
+	for _, s := range his.initialSets {
+		for _, v := range s.values {
+			ref.Track(v)
+			if ref.CountStatus(v) >= uint32(his.cfg.F+1) {
+				validity2.Remove(v)
+			} else {
+				validity2.Add(v)
+			}
+		}
 	}
 
 	// check that the output has no intersection with the complement of the union of honest
 	for _, v := range his.outputs[0].values {
-		if union.Complement(u).Contains(v) {
+		if validity2.Contains(v) {
 			t.Error("Validity 2 failed: unexpected value encountered: ", v)
 		}
 	}
@@ -106,9 +125,11 @@ type ConsensusTest struct {
 	*HareSuite
 }
 
-func newConsensusTest() *ConsensusTest {
+func newConsensusTest(cfg config.Config) *ConsensusTest {
 	ct := new(ConsensusTest)
 	ct.HareSuite = newHareSuite()
+	ct.cfg = cfg
+	ct.honestSets = make([]*Set, 0)
 
 	return ct
 }
@@ -130,11 +151,11 @@ func (test *ConsensusTest) Start() {
 	go startProcs(test.dishonest)
 }
 
-func createConsensusProcess(cfg config.Config, oracle Rolacle, network p2p.Service, initialSet *Set) *ConsensusProcess {
+func createConsensusProcess(isHonest bool, cfg config.Config, oracle fullRolacle, network p2p.Service, initialSet *Set) *ConsensusProcess {
 	broker := NewBroker(network)
 	output := make(chan TerminationOutput, 1)
 	signing := NewMockSigning()
-	oracle.Register(signing.Verifier().String())
+	oracle.Register(isHonest, signing.Verifier().String())
 	proc := NewConsensusProcess(cfg, *instanceId1, initialSet, oracle, signing, network, output)
 	broker.Register(proc)
 	broker.Start()
@@ -143,23 +164,22 @@ func createConsensusProcess(cfg config.Config, oracle Rolacle, network p2p.Servi
 }
 
 func TestConsensusFixedOracle(t *testing.T) {
-	test := newConsensusTest()
-
 	cfg := config.Config{N: 16, F: 8, SetSize: 1, RoundDuration: time.Second * time.Duration(1)}
+	test := newConsensusTest(cfg)
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, v20)
+	totalNodes := 20
+	test.initialSets = make([]*Set, totalNodes)
 	set1 := NewSetFromValues(value1)
-	test.fill(set1, 0, v20-1)
-	test.honestSets = []*Set{set1}
-	oracle := newFixedRolacle(v20)
+	test.fill(true, set1, 0, totalNodes-1)
+	oracle := newFixedRolacle(totalNodes)
 	i := 0
 	creationFunc := func() {
 		s := sim.NewNode()
-		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
+		proc := createConsensusProcess(true, cfg, oracle, s, test.initialSets[i])
 		test.procs = append(test.procs, proc)
 		i++
 	}
-	test.Create(v20, creationFunc)
+	test.Create(totalNodes, creationFunc)
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)
 }
@@ -169,38 +189,36 @@ func TestSingleValueForHonestSet(t *testing.T) {
 		t.Skip()
 	}
 
-	test := newConsensusTest()
-
 	cfg := config.Config{N: 50, F: 25, SetSize: 1, RoundDuration: time.Second * time.Duration(1)}
+	test := newConsensusTest(cfg)
+	totalNodes := 50
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, v50)
+	test.initialSets = make([]*Set, totalNodes)
 	set1 := NewSetFromValues(value1)
-	test.fill(set1, 0, v50-1)
-	test.honestSets = []*Set{set1}
-	oracle := NewMockHashOracle(v50)
+	test.fill(true, set1, 0, totalNodes-1)
+	oracle := newFixedRolacle(totalNodes)
 	i := 0
 	creationFunc := func() {
 		s := sim.NewNode()
-		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
+		proc := createConsensusProcess(true, cfg, oracle, s, test.initialSets[i])
 		test.procs = append(test.procs, proc)
 		i++
 	}
-	test.Create(v50, creationFunc)
+	test.Create(totalNodes, creationFunc)
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)
 }
-
 
 func TestAllDifferentSet(t *testing.T) {
 	if skipBlackBox {
 		t.Skip()
 	}
 
-	test := newConsensusTest()
-
 	cfg := config.Config{N: 10, F: 5, SetSize: 5, RoundDuration: time.Second * time.Duration(1)}
+	test := newConsensusTest(cfg)
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, v10)
+	totalNodes := 10
+	test.initialSets = make([]*Set, totalNodes)
 
 	base := NewSetFromValues(value1, value2)
 	test.initialSets[0] = base
@@ -213,16 +231,19 @@ func TestAllDifferentSet(t *testing.T) {
 	test.initialSets[7] = NewSetFromValues(value1, value2, value9)
 	test.initialSets[8] = NewSetFromValues(value1, value2, value10)
 	test.initialSets[9] = NewSetFromValues(value1, value2, value3, value4)
-	test.honestSets = []*Set{base}
-	oracle := NewMockHashOracle(v10)
+	for i := 0; i < 10; i++ {
+		test.honestSets = append(test.honestSets, test.initialSets[i])
+	}
+
+	oracle := newFixedRolacle(totalNodes)
 	i := 0
 	creationFunc := func() {
 		s := sim.NewNode()
-		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
+		proc := createConsensusProcess(true, cfg, oracle, s, test.initialSets[i])
 		test.procs = append(test.procs, proc)
 		i++
 	}
-	test.Create(v10, creationFunc)
+	test.Create(totalNodes, creationFunc)
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)
 }
@@ -232,81 +253,80 @@ func TestSndDelayedDishonest(t *testing.T) {
 		t.Skip()
 	}
 
-	test := newConsensusTest()
-
 	cfg := config.Config{N: 40, F: 20, SetSize: 5, RoundDuration: time.Second * time.Duration(2)}
+	test := newConsensusTest(cfg)
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, v50)
+	totalNodes := 50
+	test.initialSets = make([]*Set, totalNodes)
 	honest1 := NewSetFromValues(value1, value2, value4, value5)
 	honest2 := NewSetFromValues(value1, value3, value4, value6)
 	dishonest := NewSetFromValues(value3, value5, value6, value7)
-	test.fill(honest1, 0, 15)
-	test.fill(honest2, 16, v50/2+1)
-	test.fill(dishonest, v50/2+2, v50-1)
-	test.honestSets = []*Set{honest1, honest2}
-	oracle := NewMockHashOracle(v50)
+	test.fill(true, honest1, 0, 15)
+	test.fill(true, honest2, 16, totalNodes/2+1)
+	test.fill(false, dishonest, totalNodes/2+2, totalNodes-1)
+
+	oracle := newFixedRolacle(totalNodes)
 	i := 0
 	honestFunc := func() {
 		s := sim.NewNode()
-		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
+		proc := createConsensusProcess(true, cfg, oracle, s, test.initialSets[i])
 		test.procs = append(test.procs, proc)
 		i++
 	}
 
 	// create honest
-	test.Create(v50/2+1, honestFunc)
+	test.Create(totalNodes/2+1, honestFunc)
 
 	// create dishonest
 	dishonestFunc := func() {
 		s := sim.NewFaulty(true, 6, 0) // only broadcast delay
-		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
+		proc := createConsensusProcess(false, cfg, oracle, s, test.initialSets[i])
 		test.dishonest = append(test.dishonest, proc)
 		i++
 	}
-	test.Create(v50/2-1, dishonestFunc)
+	test.Create(totalNodes/2-1, dishonestFunc)
 
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)
 }
-
 
 func TestRecvDelayedDishonest(t *testing.T) {
 	if testing.Short() {
 		t.Skip()
 	}
 
-	test := newConsensusTest()
-
 	cfg := config.Config{N: 40, F: 20, SetSize: 5, RoundDuration: time.Second * time.Duration(2)}
+	test := newConsensusTest(cfg)
 	sim := service.NewSimulator()
-	test.initialSets = make([]*Set, v50)
+	totalNodes := 50
+	test.initialSets = make([]*Set, totalNodes)
 	honest1 := NewSetFromValues(value1, value2, value4, value5)
 	honest2 := NewSetFromValues(value1, value3, value4, value6)
 	dishonest := NewSetFromValues(value3, value5, value6, value7)
-	test.fill(honest1, 0, 15)
-	test.fill(honest2, 16, 2*v50/3)
-	test.fill(dishonest, 2*v50/3+1, v50-1)
-	test.honestSets = []*Set{honest1, honest2}
-	oracle := NewMockHashOracle(v50)
+	test.fill(true, honest1, 0, 15)
+	test.fill(true, honest2, 16, 2*totalNodes/3)
+	test.fill(true, dishonest, 2*totalNodes/3+1, totalNodes-1)
+
+	oracle := newFixedRolacle(totalNodes)
 	i := 0
 	honestFunc := func() {
 		s := sim.NewNode()
-		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
+		proc := createConsensusProcess(true, cfg, oracle, s, test.initialSets[i])
 		test.procs = append(test.procs, proc)
 		i++
 	}
 
 	// create honest
-	test.Create(v50/2+1, honestFunc)
+	test.Create(totalNodes/2+1, honestFunc)
 
 	// create dishonest
 	dishonestFunc := func() {
 		s := sim.NewFaulty(true, 0, 6) // delay rcv
-		proc := createConsensusProcess(cfg, oracle, s, test.initialSets[i])
+		proc := createConsensusProcess(false, cfg, oracle, s, test.initialSets[i])
 		test.dishonest = append(test.dishonest, proc)
 		i++
 	}
-	test.Create(v50/2-1, dishonestFunc)
+	test.Create(totalNodes/2-1, dishonestFunc)
 
 	test.Start()
 	test.WaitForTimedTermination(t, 30*time.Second)

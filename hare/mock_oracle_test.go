@@ -95,10 +95,10 @@ func TestMockHashOracle_calcThreshold(t *testing.T) {
 func TestFixedRolacle_Eligible(t *testing.T) {
 	oracle := newFixedRolacle(numOfClients)
 	for i := 0; i < numOfClients-1; i++ {
-		oracle.Register(NewMockSigning().Verifier().String())
+		oracle.Register(true, NewMockSigning().Verifier().String())
 	}
 	v := NewMockSigning().Verifier()
-	oracle.Register(v.String())
+	oracle.Register(true, v.String())
 
 	res := oracle.Eligible(nil, 1, 10, v.String(), nil)
 	assert.True(t, res == oracle.Eligible(nil, 1, 10, v.String(), nil))
@@ -110,7 +110,7 @@ func TestFixedRolacle_Eligible2(t *testing.T) {
 	for i := 0; i < numOfClients; i++ {
 		s := NewMockSigning().Verifier().String()
 		pubs = append(pubs, s)
-		oracle.Register(s)
+		oracle.Register(true, s)
 	}
 
 	count := 0
@@ -132,32 +132,13 @@ func TestFixedRolacle_Eligible2(t *testing.T) {
 	assert.Equal(t, 10, count)
 }
 
-func TestFixedRolacle_Eligible3(t *testing.T) {
-	oracle := newFixedRolacle(2)
-	s1 := NewMockSigning().Verifier().String()
-	oracle.Register(s1)
-
-	s2 := NewMockSigning().Verifier().String()
-	oracle.Register(s2)
-
-	res1 := true
-	res2 := true
-	for i := 0; i < 10; i++ {
-		res1 = res1 != oracle.Eligible(nil, i, 1, s1, nil)
-		res2 = res2 != oracle.Eligible(nil, i, 1, s2, nil)
-	}
-
-	assert.False(t, res1)
-	assert.False(t, res2)
-}
-
 func TestFixedRolacle_Range(t *testing.T) {
 	oracle := newFixedRolacle(numOfClients)
 	pubs := make([]string, 0, numOfClients)
 	for i := 0; i < numOfClients; i++ {
 		s := NewMockSigning().Verifier().String()
 		pubs = append(pubs, s)
-		oracle.Register(s)
+		oracle.Register(true, s)
 	}
 
 	count := 0

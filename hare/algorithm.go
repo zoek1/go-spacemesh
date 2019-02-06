@@ -463,7 +463,7 @@ func (proc *ConsensusProcess) processNotifyMsg(msg *pb.HareMessage) {
 
 	// enough notifications, should terminate
 	proc.s = s // update to the agreed set
-	log.Info("Consensus process terminated for %v with output set: ", proc.signing.Verifier().Bytes(), proc.s)
+	log.Info("Consensus process terminated for %v with output set: %v", proc.signing.Verifier().Bytes(), proc.s)
 	proc.terminationReport <- procOutput{proc.instanceId, proc.s}
 	proc.Close()
 	proc.terminating = true // ensures immediate termination

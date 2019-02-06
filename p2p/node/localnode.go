@@ -96,7 +96,7 @@ func newLocalNodeWithKeys(pubKey p2pcrypto.PublicKey, privKey p2pcrypto.PrivateK
 	// persistent logging
 	n.Log = log.New(n.pubKey.String(), nodeDir, "node.log")
 
-	n.Info("Local node identity >> %v", n.String())
+	n.With().Info("node_started", log.String("id", n.String()))
 
 	// persist store data so we can start it on future app sessions
 	err = n.persistData()

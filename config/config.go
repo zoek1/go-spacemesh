@@ -60,6 +60,7 @@ type BaseConfig struct {
 
 	GenesisTime      string `mapstructure:"genesis-time"`
 	LayerDurationSec uint32 `mapstructure:"layer-duration-sec"`
+	LayerSize        uint32 `mapstructure:"layer-size"`
 }
 
 // DefaultConfig returns the default configuration for a spacemesh node
@@ -87,6 +88,7 @@ func defaultBaseConfig() BaseConfig {
 		OracleServerWorldId: 0,
 		GenesisTime:         time.Now().Format(time.RFC3339),
 		LayerDurationSec:    10,
+		LayerSize:           50,
 	}
 }
 

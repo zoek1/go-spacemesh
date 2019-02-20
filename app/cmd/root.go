@@ -1,9 +1,11 @@
 package cmd
 
 import (
+	"fmt"
 	cfg "github.com/spacemeshos/go-spacemesh/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"os"
 )
 
 var (
@@ -106,11 +108,17 @@ func init() {
 		config.HARE.RoundDuration, "Duration of round in the Hare protocol")
 
 	/**========================Consensus Flags ========================== **/
-	//todo: add this here
-
-	RootCmd.AddCommand(VersionCmd)
 
 	// Bind Flags to config
 	viper.BindPFlags(RootCmd.PersistentFlags())
 
+}
+
+// Execute adds all child commands to the root command sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the rootCmd.
+func Execute() {
+	if err := RootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(-1)
+	}
 }

@@ -74,7 +74,7 @@ func NewConsensusProcess(cfg config.Config, instanceId InstanceId, s *Set, oracl
 	proc.State = State{-1, -1, s.Clone(), nil}
 	proc.Closer = NewCloser()
 	proc.instanceId = instanceId
-	proc.oracle = newHareOracle(oracle, cfg.N)
+	proc.oracle = NewHareOracle(oracle, cfg.N)
 	proc.signing = signing
 	proc.network = p2p
 	proc.validator = newSyntaxContextValidator(signing, cfg.F+1, proc.statusValidator(), logger)

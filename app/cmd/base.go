@@ -5,9 +5,11 @@ import (
 	bc "github.com/spacemeshos/go-spacemesh/config"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 	"os"
 	"os/signal"
+	"reflect"
 )
 
 type baseApp struct {
@@ -63,4 +65,54 @@ func parseConfig() (*bc.Config, error) {
 	}
 
 	return &conf, nil
+}
+
+func EnsureCLIFlags(cmd *cobra.Command, appcfg *bc.Config) {
+
+	assignFields := func(p reflect.Type, elem reflect.Value, name string) {
+		for i := 0; i < p.NumField(); i++ {
+			if p.Field(i).Tag.Get("mapstructure") == name {
+				elem.Field(i).Set(reflect.ValueOf(viper.Get(name)))
+				return
+			}
+		}
+	}
+	// this is ugly but we have to do this because viper can't handle nested structs when deserialize
+	cmd.PersistentFlags().VisitAll(func(f *pflag.Flag) {
+		if f.Changed {
+			name := f.Name
+
+			ff := reflect.TypeOf(appcfg.BaseConfig)
+			elem := reflect.ValueOf(&appcfg.BaseConfig).Elem()
+			assignFields(ff, elem, name)
+
+			ff = reflect.TypeOf(*appcfg)
+			elem = reflect.ValueOf(&appcfg).Elem()
+			assignFields(ff, elem, name)
+
+			ff = reflect.TypeOf(appcfg.API)
+			elem = reflect.ValueOf(&appcfg.API).Elem()
+			assignFields(ff, elem, name)
+
+			ff = reflect.TypeOf(appcfg.P2P)
+			elem = reflect.ValueOf(&appcfg.P2P).Elem()
+			assignFields(ff, elem, name)
+
+			ff = reflect.TypeOf(appcfg.P2P.SwarmConfig)
+			elem = reflect.ValueOf(&appcfg.P2P.SwarmConfig).Elem()
+			assignFields(ff, elem, name)
+
+			ff = reflect.TypeOf(appcfg.TIME)
+			elem = reflect.ValueOf(&appcfg.TIME).Elem()
+			assignFields(ff, elem, name)
+
+			ff = reflect.TypeOf(appcfg.CONSENSUS)
+			elem = reflect.ValueOf(&appcfg.CONSENSUS).Elem()
+			assignFields(ff, elem, name)
+
+			ff = reflect.TypeOf(appcfg.HARE)
+			elem = reflect.ValueOf(&appcfg.HARE).Elem()
+			assignFields(ff, elem, name)
+		}
+	})
 }

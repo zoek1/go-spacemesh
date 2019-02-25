@@ -77,7 +77,7 @@ func (app *AppTestSuite) initMultipleInstances(t *testing.T, numOfInstances int,
 	runningName := 'a'
 	bo := oracle.NewLocalOracle(numOfInstances)
 	for i := 0; i < numOfInstances; i++ {
-		app.apps = append(app.apps, newSpacemeshApp())
+		app.apps = append(app.apps, NewSpacemeshApp())
 		store := storeFormat + string(runningName)
 		n := net.NewNode()
 

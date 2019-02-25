@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	cfg "github.com/spacemeshos/go-spacemesh/config"
 	"github.com/spacemeshos/go-spacemesh/hare"
 	hc "github.com/spacemeshos/go-spacemesh/hare/config"
 	"github.com/spacemeshos/go-spacemesh/log"
@@ -22,18 +21,21 @@ var HareCmd = &cobra.Command{
 		fmt.Println("Starting hare")
 		hareApp := NewHareApp()
 		defer hareApp.Cleanup()
+
+		hareApp.Initialize(cmd)
 		hareApp.Start(cmd, args)
 		<-hareApp.proc.CloseChannel()
 	},
 }
 
 func init() {
+	addCommands(HareCmd)
 	RootCmd.AddCommand(HareCmd)
 }
 
 type HareApp struct {
+	*baseApp
 	p2p    p2p.Service
-	Config *cfg.Config
 	broker *hare.Broker
 	proc   *hare.ConsensusProcess
 	oracle *oracle.OracleClient
@@ -41,11 +43,11 @@ type HareApp struct {
 }
 
 func NewHareApp() *HareApp {
-	dc := cfg.DefaultConfig()
-	return &HareApp{sgn:hare.NewMockSigning(), Config: &dc}
+	return &HareApp{baseApp: newBaseApp(), sgn:hare.NewMockSigning()}
 }
 
 func (app *HareApp) Cleanup() {
+	// TODO: move to array of cleanup functions and execute all here
 	app.oracle.Unregister(true, app.sgn.Verifier().String())
 }
 

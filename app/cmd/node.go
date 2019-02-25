@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-
 	"github.com/seehuhn/mt19937"
 	apiCfg "github.com/spacemeshos/go-spacemesh/api/config"
 	"github.com/spacemeshos/go-spacemesh/common"
@@ -54,6 +53,7 @@ var NodeCmd = &cobra.Command{
 }
 
 func init() {
+	addCommands(NodeCmd)
 	RootCmd.AddCommand(NodeCmd)
 }
 

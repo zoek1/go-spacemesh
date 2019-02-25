@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"github.com/spacemeshos/go-spacemesh/hare"
-	hc "github.com/spacemeshos/go-spacemesh/hare/config"
 	"github.com/spacemeshos/go-spacemesh/log"
 	"github.com/spacemeshos/go-spacemesh/oracle"
 	"github.com/spacemeshos/go-spacemesh/p2p"
@@ -70,11 +69,14 @@ func (app *HareApp) Start(cmd *cobra.Command, args []string) {
 	app.oracle.Register(true, pub.String()) // todo: configure no faulty nodes
 	hareOracle := oracle.NewHareOracleFromClient(app.oracle)
 
-	cfg := hc.Config{N: 1, F: 0, RoundDuration: 3000 * time.Millisecond}
-	broker := hare.NewBroker(swarm, hare.NewEligibilityValidator(hare.NewHareOracle(hareOracle, cfg.N), lg))
+	broker := hare.NewBroker(swarm, hare.NewEligibilityValidator(hare.NewHareOracle(hareOracle, app.Config.HARE.N), lg))
 	app.broker = broker
 	broker.Start()
-	proc := hare.NewConsensusProcess(cfg, 1, hare.NewSetFromValues(value1), hareOracle, app.sgn, swarm, make(chan hare.TerminationOutput, 1), lg)
+	app.p2p.Start()
+
+	time.Sleep(3 * time.Second)
+
+	proc := hare.NewConsensusProcess(app.Config.HARE, 1, hare.NewSetFromValues(value1), hareOracle, app.sgn, swarm, make(chan hare.TerminationOutput, 1), lg)
 	app.proc = proc
 	proc.SetInbox(broker.Register(proc.Id()))
 	proc.Start()

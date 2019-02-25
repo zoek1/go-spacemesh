@@ -67,7 +67,7 @@ func (hr *HTTPRequester) Get(api, data string) []byte {
 
 // OracleClient is a temporary replacement fot the real oracle. its gets accurate results from a server.
 type OracleClient struct {
-	world  uint64
+	world  int
 	client Requester
 
 	eMtx           sync.Mutex
@@ -77,16 +77,16 @@ type OracleClient struct {
 
 // NewOracleClient creates a new client to query the oracle. it generates a random worldid
 func NewOracleClient() *OracleClient {
-	b, err := crypto.GetRandomBytes(8)
+	b, err := crypto.GetRandomBytes(4)
 	if err != nil {
 		panic(err)
 	}
-	world := big.NewInt(0).SetBytes(b).Uint64()
+	world := int(big.NewInt(0).SetBytes(b).Uint64())
 	return NewOracleClientWithWorldID(world)
 }
 
 // NewOracleClientWithWorldID creates a new client with a specific worldid
-func NewOracleClientWithWorldID(world uint64) *OracleClient {
+func NewOracleClientWithWorldID(world int) *OracleClient {
 	c := NewHTTPRequester(ServerAddress)
 	instMtx := make(map[uint32]*sync.Mutex)
 	eligibilityMap := make(map[uint32]map[string]struct{})
@@ -94,15 +94,15 @@ func NewOracleClientWithWorldID(world uint64) *OracleClient {
 }
 
 // World returns the world this oracle works in
-func (oc *OracleClient) World() uint64 {
+func (oc *OracleClient) World() int {
 	return oc.world
 }
 
-func registerQuery(world uint64, id string, honest bool) string {
+func registerQuery(world int, id string, honest bool) string {
 	return fmt.Sprintf(`{ "World": %d, "ID": "%v", "Honest": %t }`, world, id, honest)
 }
 
-func validateQuery(world uint64, instid uint32, committeeSize int) string {
+func validateQuery(world int, instid uint32, committeeSize int) string {
 	return fmt.Sprintf(`{ "World": %d, "InstanceID": %d, "CommitteeSize": %d}`, world, instid, committeeSize)
 }
 

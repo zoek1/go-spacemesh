@@ -42,12 +42,22 @@ type HareApp struct {
 }
 
 func NewHareApp() *HareApp {
-	return &HareApp{baseApp: newBaseApp(), sgn:hare.NewMockSigning()}
+	return &HareApp{baseApp: newBaseApp(), sgn: hare.NewMockSigning()}
 }
 
 func (app *HareApp) Cleanup() {
 	// TODO: move to array of cleanup functions and execute all here
 	app.oracle.Unregister(true, app.sgn.Verifier().String())
+}
+
+func buildSet() *hare.Set {
+	s := hare.NewEmptySet(200)
+
+	for i := 0; i < 200; i++ {
+		s.Add(hare.Value{Bytes32:hare.Bytes32{byte(i)}})
+	}
+
+	return s
 }
 
 func (app *HareApp) Start(cmd *cobra.Command, args []string) {
@@ -74,9 +84,9 @@ func (app *HareApp) Start(cmd *cobra.Command, args []string) {
 	broker.Start()
 	app.p2p.Start()
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(10 * time.Second)
 
-	proc := hare.NewConsensusProcess(app.Config.HARE, 1, hare.NewSetFromValues(value1), hareOracle, app.sgn, swarm, make(chan hare.TerminationOutput, 1), lg)
+	proc := hare.NewConsensusProcess(app.Config.HARE, 1, buildSet(), hareOracle, app.sgn, swarm, make(chan hare.TerminationOutput, 1), lg)
 	app.proc = proc
 	proc.SetInbox(broker.Register(proc.Id()))
 	proc.Start()

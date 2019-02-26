@@ -32,4 +32,5 @@ message InnerMessage {
     repeated bytes values = 5; // the set S. optional for commit message in a certificate
     bytes roleProof = 6; // role is implicit by message type, this is the proof
     AggregatedMessages svp = 7; // optional. only for proposal messages
+    bytes stub = 8;
 }

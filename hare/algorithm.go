@@ -268,6 +268,8 @@ func (proc *ConsensusProcess) sendMessage(msg *pb.HareMessage) {
 		panic("could not marshal message before send")
 	}
 
+	proc.Info("Sending message of type %v with size %v", MessageType(msg.Message.Type).String(), len(data))
+
 	if err := proc.network.Broadcast(ProtoName, data); err != nil {
 		proc.Error("Could not broadcast round message ", err.Error())
 		return

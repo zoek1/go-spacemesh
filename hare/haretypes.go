@@ -229,6 +229,7 @@ func (s *Set) Id() objectId {
 func (s *Set) String() string {
 	// TODO: should improve
 	b := new(bytes.Buffer)
+	fmt.Fprintf(b, "Count: %v\r\n", s.Size())
 	for _, v := range s.values {
 		fmt.Fprintf(b, "%v\r\n", v.Id())
 	}

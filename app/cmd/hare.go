@@ -54,7 +54,7 @@ func buildSet() *hare.Set {
 	s := hare.NewEmptySet(200)
 
 	for i := 0; i < 200; i++ {
-		s.Add(hare.Value{Bytes32:hare.Bytes32{byte(i)}})
+		s.Add(hare.Value{Bytes32: hare.Bytes32{byte(i)}})
 	}
 
 	return s

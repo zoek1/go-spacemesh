@@ -36,7 +36,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-
 // VersionCmd returns the current version of spacemesh
 var NodeCmd = &cobra.Command{
 	Use:   "node",

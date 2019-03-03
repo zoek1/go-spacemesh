@@ -11,18 +11,8 @@ type MessageBuilder struct {
 	inner *pb.InnerMessage
 }
 
-func lie() []byte {
-	a := make([]byte, 0, 40)
-	for i:=0;i< len(a);i++ {
-		a[i] = 1
-	}
-
-	return a
-}
-
 func NewMessageBuilder() *MessageBuilder {
 	m := &MessageBuilder{&pb.HareMessage{}, &pb.InnerMessage{}}
-	m.inner.Stub = lie()
 	m.outer.Message = m.inner
 
 	return m

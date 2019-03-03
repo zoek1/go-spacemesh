@@ -204,7 +204,7 @@ func (proc *ConsensusProcess) onEarlyMessage(m *pb.HareMessage) {
 func (proc *ConsensusProcess) handleMessage(m *pb.HareMessage) {
 	// Note: instanceId is already verified by the broker
 
-	proc.Debug("Received message: %v", m)
+	proc.Debug("Received message %v", m)
 
 	if !proc.validator.SyntacticallyValidateMessage(m) {
 		proc.Warning("Syntactically validation failed, pubkey %v", m.PubKey)
@@ -268,14 +268,12 @@ func (proc *ConsensusProcess) sendMessage(msg *pb.HareMessage) {
 		panic("could not marshal message before send")
 	}
 
-	proc.Info("Sending message of type %v with size %v", MessageType(msg.Message.Type).String(), len(data))
-
 	if err := proc.network.Broadcast(ProtoName, data); err != nil {
 		proc.Error("Could not broadcast round message ", err.Error())
 		return
 	}
 
-	proc.Info("Message sent: %v", MessageType(msg.Message.Type).String())
+	proc.Info("Message of type %v sent", MessageType(msg.Message.Type).String())
 }
 
 func (proc *ConsensusProcess) onRoundEnd() {

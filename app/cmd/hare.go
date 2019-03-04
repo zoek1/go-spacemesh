@@ -75,7 +75,7 @@ func (app *HareApp) Start(cmd *cobra.Command, args []string) {
 	lg := log.NewDefault(pub.String())
 
 	oracle.SetServerAddress(app.Config.OracleServer)
-	app.oracle = oracle.NewOracleClientWithWorldID(app.Config.OracleServerWorldId)
+	app.oracle = oracle.NewOracleClientWithWorldID(uint64(app.Config.OracleServerWorldId))
 	app.oracle.Register(true, pub.String()) // todo: configure no faulty nodes
 	hareOracle := oracle.NewHareOracleFromClient(app.oracle)
 

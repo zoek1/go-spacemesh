@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+const defaultSetSize = 200
 var value1 = hare.Value{Bytes32: hare.Bytes32{1}}
 
 // VersionCmd returns the current version of spacemesh
@@ -51,9 +52,9 @@ func (app *HareApp) Cleanup() {
 }
 
 func buildSet() *hare.Set {
-	s := hare.NewEmptySet(200)
+	s := hare.NewEmptySet(defaultSetSize)
 
-	for i := 0; i < 200; i++ {
+	for i := 0; i < defaultSetSize; i++ {
 		s.Add(hare.Value{Bytes32: hare.Bytes32{byte(i)}})
 	}
 

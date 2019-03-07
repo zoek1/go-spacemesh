@@ -42,7 +42,7 @@ func (pre *PreRoundTracker) OnPreRound(msg *pb.HareMessage) {
 	// record values
 	for _, v := range sToTrack.values {
 		pre.tracker.Track(v.Id())
-		metrics.PreRoundCounter.With("value", v.String()).Add(1)
+		metrics.PreRoundCounter.With("value", v.String() ).Add(1)
 	}
 
 	// update the union to include new values
